@@ -5,6 +5,253 @@
 console.log('🚀 Iniciando Alexs Barber...');
 
 // ============================================
+// FIREBASE CONFIGURATION AND INTEGRATION
+// ============================================
+
+// Firebase configuration - Replace with your actual Firebase project config
+const firebaseConfig = {
+    apiKey: "your-api-key-here",
+    authDomain: "your-project-id.firebaseapp.com",
+    projectId: "your-project-id",
+    storageBucket: "your-project-id.appspot.com",
+    messagingSenderId: "your-sender-id",
+    appId: "your-app-id"
+};
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ============================================
+// FIREBASE REPLACEMENT FUNCTIONS FOR RESERVATIONS
+// ============================================
+
+async function loadBookedAppointmentsFirebase() {
+    try {
+        console.log('🔥 Loading appointments from Firebase...');
+        const snapshot = await db.collection('reservas').get();
+        bookedAppointments = {};
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.horas && data.horas.length > 0) {
+                bookedAppointments[doc.id] = data.horas;
+            }
+        });
+
+        console.log('✅ Appointments loaded from Firebase:', Object.keys(bookedAppointments).length);
+
+        // Clean old appointments automatically
+        await cleanupOldAppointmentsFirebase();
+
+    } catch (error) {
+        console.error('❌ Error loading appointments from Firebase:', error);
+        // Fallback to localStorage if Firebase fails
+        loadBookedAppointments();
+    }
+}
+
+async function saveBookedAppointmentsFirebase() {
+    try {
+        console.log('🔥 Saving appointments to Firebase...');
+
+        // Save each day's appointments as a separate document
+        const savePromises = Object.keys(bookedAppointments).map(async (date) => {
+            const docRef = db.collection('reservas').doc(date);
+            await docRef.set({
+                horas: bookedAppointments[date],
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        await Promise.all(savePromises);
+        console.log('✅ Appointments saved to Firebase successfully');
+
+    } catch (error) {
+        console.error('❌ Error saving to Firebase:', error);
+        // Fallback to localStorage if Firebase fails
+        saveBookedAppointments();
+    }
+}
+
+async function isTimeSlotAvailableFirebase(date, time) {
+    try {
+        const docRef = db.collection('reservas').doc(date);
+        const doc = await docRef.get();
+
+        if (!doc.exists) return true;
+        return !doc.data().horas.includes(time);
+
+    } catch (error) {
+        console.error('❌ Error checking availability in Firebase:', error);
+        // Fallback to localStorage
+        return isTimeSlotAvailable(date, time);
+    }
+}
+
+async function bookTimeSlotFirebase(date, time) {
+    try {
+        const docRef = db.collection('reservas').doc(date);
+        const doc = await docRef.get();
+        let dayData = doc.exists ? doc.data().horas : [];
+
+        if (!dayData.includes(time)) {
+            dayData.push(time);
+            await docRef.set({
+                horas: dayData,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`✅ Time slot ${time} booked successfully in Firebase`);
+            return true;
+        } else {
+            console.log(`❌ Time slot ${time} already occupied`);
+            return false;
+        }
+
+    } catch (error) {
+        console.error('❌ Error booking time slot in Firebase:', error);
+        // Fallback to localStorage
+        return bookTimeSlot(date, time);
+    }
+}
+
+async function cleanupOldAppointmentsFirebase() {
+    try {
+        const today = getLocalISODate(new Date());
+        const snapshot = await db.collection('reservas').get();
+
+        const deletePromises = [];
+        snapshot.forEach(doc => {
+            if (doc.id < today) {
+                deletePromises.push(doc.ref.delete());
+            }
+        });
+
+        if (deletePromises.length > 0) {
+            await Promise.all(deletePromises);
+            console.log(`🧹 Cleaned up ${deletePromises.length} old appointments from Firebase`);
+        }
+
+    } catch (error) {
+        console.error('❌ Error cleaning old appointments:', error);
+    }
+}
+
+// ============================================
+// FIREBASE REPLACEMENT FUNCTIONS FOR BLOCKED DAYS
+// ============================================
+
+async function loadBlockedDaysFirebase() {
+    try {
+        console.log('🔥 Loading blocked days from Firebase...');
+        const snapshot = await db.collection('diasBloqueados').get();
+        blockedDays = {};
+
+        snapshot.forEach(doc => {
+            blockedDays[doc.id] = doc.data();
+        });
+
+        console.log('✅ Blocked days loaded from Firebase:', Object.keys(blockedDays).length);
+
+    } catch (error) {
+        console.error('❌ Error loading blocked days from Firebase:', error);
+        // Fallback to localStorage
+        loadBlockedDays();
+    }
+}
+
+async function saveBlockedDaysFirebase() {
+    try {
+        console.log('🔥 Saving blocked days to Firebase...');
+
+        const savePromises = Object.keys(blockedDays).map(async (date) => {
+            const docRef = db.collection('diasBloqueados').doc(date);
+            await docRef.set({
+                ...blockedDays[date],
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        });
+
+        await Promise.all(savePromises);
+        console.log('✅ Blocked days saved to Firebase successfully');
+
+    } catch (error) {
+        console.error('❌ Error saving blocked days to Firebase:', error);
+        // Fallback to localStorage
+        saveBlockedDays();
+    }
+}
+
+// ============================================
+// REAL-TIME LISTENERS FOR MULTI-DEVICE SYNC
+// ============================================
+
+function initializeFirebaseApp() {
+    console.log('🔥 Initializing Firebase application...');
+
+    try {
+        // Load data from Firebase first
+        Promise.all([
+            loadBookedAppointmentsFirebase(),
+            loadBlockedDaysFirebase()
+        ]).then(() => {
+            console.log('✅ Firebase data loaded successfully');
+
+            // Initialize real-time listeners for multi-device sync
+            initializeRealtimeListeners();
+
+            // Fallback: also load from localStorage in case Firebase fails
+            loadBookedAppointments();
+            loadBlockedDays();
+
+        }).catch(error => {
+            console.error('❌ Error loading Firebase data:', error);
+            console.log('📦 Falling back to localStorage...');
+
+            // Fallback to localStorage if Firebase fails
+            loadBookedAppointments();
+            loadBlockedDays();
+        });
+
+    } catch (error) {
+        console.error('❌ Error initializing Firebase:', error);
+        // Fallback to localStorage
+        loadBookedAppointments();
+        loadBlockedDays();
+    }
+}
+
+function initializeRealtimeListeners() {
+    console.log('🔥 Initializing Firebase real-time listeners...');
+
+    try {
+        // Listen for changes in reservations
+        db.collection('reservas').onSnapshot((snapshot) => {
+            console.log('🔄 Real-time update detected in reservations');
+            loadBookedAppointmentsFirebase();
+            // Update UI if booking modal is open
+            if (document.getElementById('bookingModal')?.style.display === 'block') {
+                updateTimeSlotsAvailability();
+            }
+        });
+
+        // Listen for changes in blocked days
+        db.collection('diasBloqueados').onSnapshot((snapshot) => {
+            console.log('🔄 Real-time update detected in blocked days');
+            loadBlockedDaysFirebase();
+            // Update UI if booking modal is open
+            if (document.getElementById('bookingModal')?.style.display === 'block') {
+                updateTimeSlotsAvailability();
+            }
+        });
+
+        console.log('✅ Real-time listeners initialized');
+    } catch (error) {
+        console.error('❌ Error initializing real-time listeners:', error);
+    }
+}
+
+// ============================================
 // VARIABLES GLOBALES Y SISTEMA DE AUTOGUARDADO
 // ============================================
 
@@ -70,11 +317,8 @@ function updateCurrentDate() {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('📄 DOM cargado, inicializando...');
 
-    // Inicializar sistema de reservas ocupadas
-    loadBookedAppointments();
-
-    // Inicializar sistema de días bloqueados
-    loadBlockedDays();
+    // 🔥 Inicializar Firebase y cargar datos compartidos
+    initializeFirebaseApp();
 
     // Inicializar fecha actual
     updateCurrentDate();
@@ -102,7 +346,8 @@ document.addEventListener('DOMContentLoaded', function() {
     generateCodeAutomatically();
 
     console.log('✅ Página lista para usar');
-    console.log('🔄 Sistema de autoguardado activo');
+    console.log('� Firebase conectado - reservas compartidas entre dispositivos');
+    console.log('�🔄 Sistema de autoguardado activo');
     console.log('📦 Respaldos automáticos programados');
     console.log('📊 Reportes automáticos habilitados');
 });
@@ -512,8 +757,8 @@ NUEVA RESERVA - ALEX BARBER
         }
     }
 
-    // Marcar la hora como ocupada ANTES de cerrar el modal
-    bookTimeSlot(bookingData.appointmentDate, bookingData.appointmentTime);
+    // Marcar la hora como ocupada ANTES de cerrar el modal usando Firebase
+    bookTimeSlotFirebase(bookingData.appointmentDate, bookingData.appointmentTime);
 
     // Cerrar modal y resetear formulario
     closeBookingModal();
@@ -664,7 +909,7 @@ function bookTimeSlot(date, time) {
     return false;
 }
 
-function updateTimeSlotsAvailability() {
+async function updateTimeSlotsAvailability() {
     const dateInput = document.getElementById('appointmentDate');
     const timeSelect = document.getElementById('appointmentTime');
 
@@ -684,25 +929,39 @@ function updateTimeSlotsAvailability() {
         '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
     ];
 
-    availableTimes.forEach(time => {
+    // Usar Firebase para verificar disponibilidad
+    for (const time of availableTimes) {
         const option = document.createElement('option');
         option.value = time;
 
-        if (isTimeSlotAvailable(selectedDate, time)) {
-            option.textContent = `${time} - Disponible`;
-            option.className = 'time-available';
-        } else {
-            option.textContent = `${time} - Ocupada`;
-            option.className = 'time-occupied';
-            option.disabled = true;
+        try {
+            const isAvailable = await isTimeSlotAvailableFirebase(selectedDate, time);
+            if (isAvailable) {
+                option.textContent = `${time} - Disponible`;
+                option.className = 'time-available';
+            } else {
+                option.textContent = `${time} - Ocupada`;
+                option.className = 'time-occupied';
+                option.disabled = true;
+            }
+        } catch (error) {
+            console.error('❌ Error checking availability for time slot:', time, error);
+            // Fallback to localStorage if Firebase fails
+            if (isTimeSlotAvailable(selectedDate, time)) {
+                option.textContent = `${time} - Disponible`;
+                option.className = 'time-available';
+            } else {
+                option.textContent = `${time} - Ocupada`;
+                option.className = 'time-occupied';
+                option.disabled = true;
+            }
         }
 
         timeSelect.appendChild(option);
-    });
+    }
 
-    console.log(`📅 Horarios actualizados para ${selectedDate}`);
+    console.log(`📅 Horarios actualizados para ${selectedDate} usando Firebase`);
 }
-
 
 // ============================================
 // FUNCIONES DEL SISTEMA DE DÍAS BLOQUEADOS
@@ -2313,3 +2572,7 @@ document.addEventListener('DOMContentLoaded', function() {
 console.log('🎯 Alexs Barber - Sistema avanzado con autoguardado automático');
 console.log('🔧 Funciones automáticas disponibles globalmente');
 console.log('📋 Escribe los comandos en la consola para usarlos');
+
+// ============================================
+// END OF FILE - ALEXS BARBER SYSTEM
+// ============================================
