@@ -1,266 +1,27 @@
 // ============================================
-// ALEXS BARBER - SCRIPT PRINCIPAL
+// ALEXS BARBER - SCRIPT PRINCIPAL CON FIREBASE
 // ============================================
 
-console.log('🚀 Iniciando Alexs Barber...');
+console.log('🚀 Iniciando Alexs Barber con Firebase...');
 
 // ============================================
-// FIREBASE CONFIGURATION AND INTEGRATION
+// FIREBASE CONFIGURATION & INITIALIZATION
 // ============================================
 
-// Firebase configuration - Replace with your actual Firebase project config
-const firebaseConfig = {
-    apiKey: "YOUR_FIREBASE_API_KEY_HERE",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID_HERE",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
-};
+// Firebase ya está inicializado en index.html desde el módulo
+// Variables globales de Firebase disponibles: window.db
 
-// Initialize Firebase (modern way)
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getFirestore } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// ============================================
-// FIREBASE REPLACEMENT FUNCTIONS FOR RESERVATIONS
-// ============================================
-
-async function loadBookedAppointmentsFirebase() {
-    try {
-        console.log('🔥 Loading appointments from Firebase...');
-        const snapshot = await db.collection('reservas').get();
-        bookedAppointments = {};
-
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.horas && data.horas.length > 0) {
-                bookedAppointments[doc.id] = data.horas;
-            }
-        });
-
-        console.log('✅ Appointments loaded from Firebase:', Object.keys(bookedAppointments).length);
-
-        // Clean old appointments automatically
-        await cleanupOldAppointmentsFirebase();
-
-    } catch (error) {
-        console.error('❌ Error loading appointments from Firebase:', error);
-        // Fallback to localStorage if Firebase fails
-        loadBookedAppointments();
-    }
-}
-
-async function saveBookedAppointmentsFirebase() {
-    try {
-        console.log('🔥 Saving appointments to Firebase...');
-
-        // Save each day's appointments as a separate document
-        const savePromises = Object.keys(bookedAppointments).map(async (date) => {
-            const docRef = db.collection('reservas').doc(date);
-            await docRef.set({
-                horas: bookedAppointments[date],
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        });
-
-        await Promise.all(savePromises);
-        console.log('✅ Appointments saved to Firebase successfully');
-
-    } catch (error) {
-        console.error('❌ Error saving to Firebase:', error);
-        // Fallback to localStorage if Firebase fails
-        saveBookedAppointments();
-    }
-}
-
-async function isTimeSlotAvailableFirebase(date, time) {
-    try {
-        const docRef = db.collection('reservas').doc(date);
-        const doc = await docRef.get();
-
-        if (!doc.exists) return true;
-        return !doc.data().horas.includes(time);
-
-    } catch (error) {
-        console.error('❌ Error checking availability in Firebase:', error);
-        // Fallback to localStorage
-        return isTimeSlotAvailable(date, time);
-    }
-}
-
-async function bookTimeSlotFirebase(date, time) {
-    try {
-        const docRef = db.collection('reservas').doc(date);
-        const doc = await docRef.get();
-        let dayData = doc.exists ? doc.data().horas : [];
-
-        if (!dayData.includes(time)) {
-            dayData.push(time);
-            await docRef.set({
-                horas: dayData,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            console.log(`✅ Time slot ${time} booked successfully in Firebase`);
-            return true;
-        } else {
-            console.log(`❌ Time slot ${time} already occupied`);
-            return false;
-        }
-
-    } catch (error) {
-        console.error('❌ Error booking time slot in Firebase:', error);
-        // Fallback to localStorage
-        return bookTimeSlot(date, time);
-    }
-}
-
-async function cleanupOldAppointmentsFirebase() {
-    try {
-        const today = getLocalISODate(new Date());
-        const snapshot = await db.collection('reservas').get();
-
-        const deletePromises = [];
-        snapshot.forEach(doc => {
-            if (doc.id < today) {
-                deletePromises.push(doc.ref.delete());
-            }
-        });
-
-        if (deletePromises.length > 0) {
-            await Promise.all(deletePromises);
-            console.log(`🧹 Cleaned up ${deletePromises.length} old appointments from Firebase`);
-        }
-
-    } catch (error) {
-        console.error('❌ Error cleaning old appointments:', error);
-    }
+// Función para verificar si Firebase está disponible
+function isFirebaseAvailable() {
+    return typeof window.db !== 'undefined';
 }
 
 // ============================================
-// FIREBASE REPLACEMENT FUNCTIONS FOR BLOCKED DAYS
+// VARIABLES GLOBALES
 // ============================================
 
-async function loadBlockedDaysFirebase() {
-    try {
-        console.log('🔥 Loading blocked days from Firebase...');
-        const snapshot = await db.collection('diasBloqueados').get();
-        blockedDays = {};
-
-        snapshot.forEach(doc => {
-            blockedDays[doc.id] = doc.data();
-        });
-
-        console.log('✅ Blocked days loaded from Firebase:', Object.keys(blockedDays).length);
-
-    } catch (error) {
-        console.error('❌ Error loading blocked days from Firebase:', error);
-        // Fallback to localStorage
-        loadBlockedDays();
-    }
-}
-
-async function saveBlockedDaysFirebase() {
-    try {
-        console.log('🔥 Saving blocked days to Firebase...');
-
-        const savePromises = Object.keys(blockedDays).map(async (date) => {
-            const docRef = db.collection('diasBloqueados').doc(date);
-            await docRef.set({
-                ...blockedDays[date],
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        });
-
-        await Promise.all(savePromises);
-        console.log('✅ Blocked days saved to Firebase successfully');
-
-    } catch (error) {
-        console.error('❌ Error saving blocked days to Firebase:', error);
-        // Fallback to localStorage
-        saveBlockedDays();
-    }
-}
-
-// ============================================
-// REAL-TIME LISTENERS FOR MULTI-DEVICE SYNC
-// ============================================
-
-function initializeFirebaseApp() {
-    console.log('🔥 Initializing Firebase application...');
-
-    try {
-        // Load data from Firebase first
-        Promise.all([
-            loadBookedAppointmentsFirebase(),
-            loadBlockedDaysFirebase()
-        ]).then(() => {
-            console.log('✅ Firebase data loaded successfully');
-
-            // Initialize real-time listeners for multi-device sync
-            initializeRealtimeListeners();
-
-            // Fallback: also load from localStorage in case Firebase fails
-            loadBookedAppointments();
-            loadBlockedDays();
-
-        }).catch(error => {
-            console.error('❌ Error loading Firebase data:', error);
-            console.log('📦 Falling back to localStorage...');
-
-            // Fallback to localStorage if Firebase fails
-            loadBookedAppointments();
-            loadBlockedDays();
-        });
-
-    } catch (error) {
-        console.error('❌ Error initializing Firebase:', error);
-        // Fallback to localStorage
-        loadBookedAppointments();
-        loadBlockedDays();
-    }
-}
-
-function initializeRealtimeListeners() {
-    console.log('🔥 Initializing Firebase real-time listeners...');
-
-    try {
-        // Listen for changes in reservations
-        db.collection('reservas').onSnapshot((snapshot) => {
-            console.log('🔄 Real-time update detected in reservations');
-            loadBookedAppointmentsFirebase();
-            // Update UI if booking modal is open
-            if (document.getElementById('bookingModal')?.style.display === 'block') {
-                updateTimeSlotsAvailability();
-            }
-        });
-
-        // Listen for changes in blocked days
-        db.collection('diasBloqueados').onSnapshot((snapshot) => {
-            console.log('🔄 Real-time update detected in blocked days');
-            loadBlockedDaysFirebase();
-            // Update UI if booking modal is open
-            if (document.getElementById('bookingModal')?.style.display === 'block') {
-                updateTimeSlotsAvailability();
-            }
-        });
-
-        console.log('✅ Real-time listeners initialized');
-    } catch (error) {
-        console.error('❌ Error initializing real-time listeners:', error);
-    }
-}
-
-// ============================================
-// VARIABLES GLOBALES Y SISTEMA DE AUTOGUARDADO
-// ============================================
-
-// Variables del carrusel
 let currentSlide = 1;
-const totalSlides = 8; // Solo imágenes
+const totalSlides = 8;
 let slideInterval;
 let isPlaying = true;
 
@@ -278,11 +39,474 @@ let adminSettings = {
     whatsappNumber: '56926257862'
 };
 
-// Sistema de autoguardado
-let autoSaveInterval;
-let lastSaveTimestamp = 0;
-const AUTOSAVE_DELAY = 2000; // 2 segundos
-let pendingChanges = false;
+// ============================================
+// FUNCIONES DE FIREBASE FIRESTORE
+// ============================================
+
+/**
+ * Cargar todas las reservas desde Firebase Firestore
+ * Estructura: reservas/{fecha} -> { horas: ["09:00", "10:00", ...] }
+ */
+async function loadBookedAppointmentsFirebase() {
+    try {
+        console.log('🔥 Cargando reservas desde Firebase Firestore...');
+
+        if (!isFirebaseAvailable()) {
+            console.warn('⚠️ Firebase no disponible, usando localStorage como fallback');
+            loadBookedAppointments();
+            return;
+        }
+
+        // Importar funciones necesarias de Firestore
+        const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        // Obtener todas las reservas de la colección
+        const reservasRef = collection(window.db, 'reservas');
+        const querySnapshot = await getDocs(reservasRef);
+
+        // Limpiar datos locales
+        bookedAppointments = {};
+
+        // Procesar cada documento (cada documento es una fecha)
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            const fecha = doc.id; // El ID del documento es la fecha (YYYY-MM-DD)
+            
+            if (data.horas && Array.isArray(data.horas) && data.horas.length > 0) {
+                bookedAppointments[fecha] = data.horas;
+            }
+        });
+
+        console.log(`✅ Reservas cargadas desde Firebase: ${Object.keys(bookedAppointments).length} fechas con reservas`);
+
+        // Limpiar reservas antiguas automáticamente
+        await cleanupOldAppointmentsFirebase();
+
+    } catch (error) {
+        console.error('❌ Error cargando reservas desde Firebase:', error);
+        console.log('📦 Usando localStorage como fallback...');
+        loadBookedAppointments();
+    }
+}
+
+/**
+ * Verificar si una hora específica está disponible en Firebase
+ * @param {string} date - Fecha en formato YYYY-MM-DD
+ * @param {string} time - Hora en formato HH:MM
+ * @returns {boolean} - true si está disponible, false si está ocupada
+ */
+async function isTimeSlotAvailableFirebase(date, time) {
+    try {
+        if (!isFirebaseAvailable()) {
+            return isTimeSlotAvailableLocal(date, time);
+        }
+
+        const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        // Obtener documento de la fecha específica
+        const docRef = doc(window.db, 'reservas', date);
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+            // Si no existe el documento, la hora está disponible
+            return true;
+        }
+
+        const data = docSnap.data();
+        const horasOcupadas = data.horas || [];
+
+        // Verificar si la hora está en el arreglo de horas ocupadas
+        const isOccupied = horasOcupadas.includes(time);
+        
+        console.log(`🔍 Verificando ${date} a las ${time}: ${isOccupied ? '❌ Ocupada' : '✅ Disponible'}`);
+        
+        return !isOccupied;
+
+    } catch (error) {
+        console.error('❌ Error verificando disponibilidad en Firebase:', error);
+        return isTimeSlotAvailableLocal(date, time);
+    }
+}
+
+/**
+ * Reservar una hora específica en Firebase
+ * @param {string} date - Fecha en formato YYYY-MM-DD
+ * @param {string} time - Hora en formato HH:MM
+ * @returns {boolean} - true si se reservó exitosamente, false si ya estaba ocupada
+ */
+async function bookTimeSlotFirebase(date, time) {
+    try {
+        if (!isFirebaseAvailable()) {
+            return bookTimeSlotLocal(date, time);
+        }
+
+        const { doc, getDoc, setDoc, updateDoc, arrayUnion, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        const docRef = doc(window.db, 'reservas', date);
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+            // Crear nuevo documento con la primera reserva
+            await setDoc(docRef, {
+                horas: [time],
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+            
+            console.log(`✅ Nueva fecha creada en Firebase: ${date} con hora ${time}`);
+            
+            // Actualizar cache local
+            bookedAppointments[date] = [time];
+            
+            return true;
+        }
+
+        // Verificar si la hora ya está ocupada
+        const data = docSnap.data();
+        const horasOcupadas = data.horas || [];
+
+        if (horasOcupadas.includes(time)) {
+            console.log(`❌ Hora ${time} ya está ocupada para ${date}`);
+            return false;
+        }
+
+        // Agregar la nueva hora al arreglo
+        await updateDoc(docRef, {
+            horas: arrayUnion(time),
+            updatedAt: serverTimestamp()
+        });
+
+        console.log(`✅ Hora ${time} reservada exitosamente en Firebase para ${date}`);
+
+        // Actualizar cache local
+        if (!bookedAppointments[date]) {
+            bookedAppointments[date] = [];
+        }
+        bookedAppointments[date].push(time);
+
+        return true;
+
+    } catch (error) {
+        console.error('❌ Error reservando hora en Firebase:', error);
+        return bookTimeSlotLocal(date, time);
+    }
+}
+
+/**
+ * Limpiar reservas antiguas de Firebase (antes de hoy)
+ */
+async function cleanupOldAppointmentsFirebase() {
+    try {
+        const { collection, getDocs, deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        const today = getLocalISODate(new Date());
+        const reservasRef = collection(window.db, 'reservas');
+        const snapshot = await getDocs(reservasRef);
+
+        const deletePromises = [];
+        
+        snapshot.forEach((document) => {
+            const fecha = document.id;
+            // Comparar fechas: si la fecha del documento es anterior a hoy, eliminar
+            if (fecha < today) {
+                const docRef = doc(window.db, 'reservas', fecha);
+                deletePromises.push(deleteDoc(docRef));
+            }
+        });
+
+        if (deletePromises.length > 0) {
+            await Promise.all(deletePromises);
+            console.log(`🧹 ${deletePromises.length} reservas antiguas eliminadas de Firebase`);
+        }
+
+        // Actualizar cache local
+        for (let fecha in bookedAppointments) {
+            if (fecha < today) {
+                delete bookedAppointments[fecha];
+            }
+        }
+
+    } catch (error) {
+        console.error('❌ Error limpiando reservas antiguas:', error);
+    }
+}
+
+/**
+ * Eliminar una hora específica de una fecha en Firebase
+ * @param {string} date - Fecha en formato YYYY-MM-DD
+ * @param {string} time - Hora en formato HH:MM
+ */
+async function deleteBookingFirebase(date, time) {
+    try {
+        if (!isFirebaseAvailable()) {
+            return deleteBookingLocal(date, time);
+        }
+
+        const { doc, getDoc, updateDoc, deleteDoc, arrayRemove } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        const docRef = doc(window.db, 'reservas', date);
+        const docSnap = await getDoc(docRef);
+
+        if (!docSnap.exists()) {
+            console.log(`⚠️ No existe documento para la fecha ${date}`);
+            return false;
+        }
+
+        const data = docSnap.data();
+        const horasOcupadas = data.horas || [];
+
+        // Remover la hora del arreglo
+        await updateDoc(docRef, {
+            horas: arrayRemove(time)
+        });
+
+        // Si ya no quedan horas, eliminar el documento completo
+        if (horasOcupadas.length === 1 && horasOcupadas[0] === time) {
+            await deleteDoc(docRef);
+            console.log(`🗑️ Documento eliminado para ${date} (sin reservas restantes)`);
+            
+            // Actualizar cache local
+            delete bookedAppointments[date];
+        } else {
+            console.log(`🗑️ Hora ${time} eliminada de ${date}`);
+            
+            // Actualizar cache local
+            if (bookedAppointments[date]) {
+                bookedAppointments[date] = bookedAppointments[date].filter(h => h !== time);
+            }
+        }
+
+        return true;
+
+    } catch (error) {
+        console.error('❌ Error eliminando reserva en Firebase:', error);
+        return false;
+    }
+}
+
+/**
+ * Eliminar todas las reservas de Firebase
+ */
+async function clearAllBookingsFirebase() {
+    try {
+        if (!isFirebaseAvailable()) {
+            clearAllBookings();
+            return;
+        }
+
+        const { collection, getDocs, deleteDoc, doc } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        const reservasRef = collection(window.db, 'reservas');
+        const snapshot = await getDocs(reservasRef);
+
+        const deletePromises = [];
+        
+        snapshot.forEach((document) => {
+            const docRef = doc(window.db, 'reservas', document.id);
+            deletePromises.push(deleteDoc(docRef));
+        });
+
+        await Promise.all(deletePromises);
+        
+        console.log(`🗑️ ${deletePromises.length} documentos eliminados de Firebase`);
+
+        // Limpiar cache local
+        bookedAppointments = {};
+
+        return true;
+
+    } catch (error) {
+        console.error('❌ Error limpiando todas las reservas:', error);
+        return false;
+    }
+}
+
+// ============================================
+// REAL-TIME LISTENERS (SINCRONIZACIÓN AUTOMÁTICA)
+// ============================================
+
+/**
+ * Inicializar listeners en tiempo real para sincronizar cambios
+ * Cuando otra persona hace una reserva, se actualiza automáticamente
+ */
+async function initializeRealtimeListeners() {
+    try {
+        if (!isFirebaseAvailable()) {
+            console.log('⚠️ Firebase no disponible, listeners en tiempo real desactivados');
+            return;
+        }
+
+        console.log('🔥 Inicializando listeners en tiempo real...');
+
+        const { collection, onSnapshot } = await import('https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js');
+
+        // Escuchar cambios en la colección de reservas
+        const reservasRef = collection(window.db, 'reservas');
+        
+        onSnapshot(reservasRef, (snapshot) => {
+            console.log('🔄 Actualización en tiempo real detectada');
+            
+            // Actualizar cache local
+            snapshot.docChanges().forEach((change) => {
+                const fecha = change.doc.id;
+                const data = change.doc.data();
+
+                if (change.type === 'added' || change.type === 'modified') {
+                    bookedAppointments[fecha] = data.horas || [];
+                    console.log(`✅ Actualizado ${fecha}: ${data.horas?.length || 0} horas ocupadas`);
+                }
+
+                if (change.type === 'removed') {
+                    delete bookedAppointments[fecha];
+                    console.log(`🗑️ Eliminado ${fecha}`);
+                }
+            });
+
+            // Si el modal de reservas está abierto, actualizar los horarios
+            const bookingModal = document.getElementById('bookingModal');
+            if (bookingModal && bookingModal.classList.contains('show')) {
+                updateTimeSlotsAvailability();
+            }
+
+            // Si el panel de admin está abierto, actualizar la lista
+            if (isAdminLoggedIn) {
+                refreshBookingsList();
+            }
+        });
+
+        console.log('✅ Listeners en tiempo real activos - sincronización automática habilitada');
+
+    } catch (error) {
+        console.error('❌ Error inicializando listeners:', error);
+    }
+}
+
+// ============================================
+// FUNCIONES LOCALES (FALLBACK)
+// ============================================
+
+function isTimeSlotAvailableLocal(date, time) {
+    if (bookedAppointments[date] && bookedAppointments[date].includes(time)) {
+        return false;
+    }
+    return true;
+}
+
+function bookTimeSlotLocal(date, time) {
+    if (!bookedAppointments[date]) {
+        bookedAppointments[date] = [];
+    }
+    
+    if (!bookedAppointments[date].includes(time)) {
+        bookedAppointments[date].push(time);
+        saveBookedAppointments();
+        return true;
+    }
+    
+    return false;
+}
+
+function deleteBookingLocal(date, time) {
+    if (bookedAppointments[date]) {
+        const index = bookedAppointments[date].indexOf(time);
+        if (index > -1) {
+            bookedAppointments[date].splice(index, 1);
+            
+            if (bookedAppointments[date].length === 0) {
+                delete bookedAppointments[date];
+            }
+            
+            saveBookedAppointments();
+            return true;
+        }
+    }
+    return false;
+}
+
+function loadBookedAppointments() {
+    try {
+        const saved = localStorage.getItem('alexBarberAppointments');
+        if (saved) {
+            bookedAppointments = JSON.parse(saved);
+            console.log('📦 Reservas cargadas desde localStorage');
+        }
+    } catch (error) {
+        console.error('❌ Error cargando desde localStorage:', error);
+        bookedAppointments = {};
+    }
+}
+
+function saveBookedAppointments() {
+    try {
+        localStorage.setItem('alexBarberAppointments', JSON.stringify(bookedAppointments));
+        console.log('💾 Reservas guardadas en localStorage');
+    } catch (error) {
+        console.error('❌ Error guardando en localStorage:', error);
+    }
+}
+
+// ============================================
+// FUNCIONES WRAPPER (USAR ESTAS EN TU CÓDIGO)
+// ============================================
+
+/**
+ * Verificar si una hora está disponible (usa Firebase o localStorage)
+ */
+async function isTimeSlotAvailable(date, time) {
+    if (isFirebaseAvailable()) {
+        return await isTimeSlotAvailableFirebase(date, time);
+    } else {
+        return isTimeSlotAvailableLocal(date, time);
+    }
+}
+
+/**
+ * Reservar una hora (usa Firebase o localStorage)
+ */
+async function bookTimeSlot(date, time) {
+    if (isFirebaseAvailable()) {
+        return await bookTimeSlotFirebase(date, time);
+    } else {
+        return bookTimeSlotLocal(date, time);
+    }
+}
+
+/**
+ * Eliminar una reserva (usa Firebase o localStorage)
+ */
+async function deleteBooking(date, time) {
+    if (isFirebaseAvailable()) {
+        const success = await deleteBookingFirebase(date, time);
+        if (success) {
+            refreshBookingsList();
+            updateTimeSlotsAvailability();
+        }
+    } else {
+        deleteBookingLocal(date, time);
+        refreshBookingsList();
+        updateTimeSlotsAvailability();
+    }
+}
+
+/**
+ * Limpiar todas las reservas
+ */
+async function clearAllBookings() {
+    if (!confirm('¿Estás seguro de que deseas eliminar TODAS las reservas? Esta acción no se puede deshacer.')) {
+        return;
+    }
+
+    if (isFirebaseAvailable()) {
+        await clearAllBookingsFirebase();
+    } else {
+        bookedAppointments = {};
+        saveBookedAppointments();
+    }
+
+    refreshBookingsList();
+    updateTimeSlotsAvailability();
+    console.log('🗑️ Todas las reservas eliminadas');
+}
 
 // ============================================
 // FUNCIONES DE UTILIDAD
@@ -298,7 +522,7 @@ function getLocalISODate(date = new Date()) {
 function updateCurrentDate() {
     const fecha = new Date();
     const fechaLocal = fecha.toLocaleDateString('es-CL', {
-        timeZone: 'America/Santiago', // zona horaria de Chile
+        timeZone: 'America/Santiago',
         year: 'numeric',
         month: 'long',
         day: 'numeric'
@@ -307,9 +531,6 @@ function updateCurrentDate() {
     const fechaElement = document.getElementById("fecha");
     if (fechaElement) {
         fechaElement.innerText = fechaLocal;
-        console.log('📅 Fecha actualizada:', fechaLocal);
-    } else {
-        console.error('❌ Elemento con id="fecha" no encontrado');
     }
 }
 
@@ -317,11 +538,17 @@ function updateCurrentDate() {
 // INICIALIZACIÓN
 // ============================================
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('📄 DOM cargado, inicializando...');
 
-    // 🔥 Inicializar Firebase y cargar datos compartidos
-    initializeFirebaseApp();
+    // Esperar a que Firebase esté listo
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Cargar datos desde Firebase
+    await loadBookedAppointmentsFirebase();
+
+    // Inicializar listeners en tiempo real
+    await initializeRealtimeListeners();
 
     // Inicializar fecha actual
     updateCurrentDate();
@@ -336,23 +563,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Navegación por teclado
     document.addEventListener('keydown', handleKeyNavigation);
 
-    // 🚀 Inicializar sistema de autoguardado automático
-    initializeAutoSave();
-
-    // 🔄 Inicializar sincronización automática de datos
-    initializeDataSync();
-
-    // 📊 Inicializar generación automática de reportes
-    autoGenerateReports();
-
-    // 🤖 Generar código automáticamente si es necesario
-    generateCodeAutomatically();
+    // Cargar días bloqueados
+    loadBlockedDays();
 
     console.log('✅ Página lista para usar');
-    console.log('� Firebase conectado - reservas compartidas entre dispositivos');
-    console.log('�🔄 Sistema de autoguardado activo');
-    console.log('📦 Respaldos automáticos programados');
-    console.log('📊 Reportes automáticos habilitados');
+    console.log('🔥 Firebase Firestore conectado');
+    console.log('🔄 Sincronización en tiempo real activa');
 });
 
 // ============================================
@@ -360,12 +576,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 
 function initCarousel() {
-    // Generar indicadores dinámicamente
     const indicatorsContainer = document.getElementById('carouselIndicators');
-    if (!indicatorsContainer) {
-        console.error('❌ Contenedor de indicadores no encontrado');
-        return;
-    }
+    if (!indicatorsContainer) return;
 
     for (let i = 1; i <= totalSlides; i++) {
         const indicator = document.createElement('span');
@@ -374,20 +586,14 @@ function initCarousel() {
         indicatorsContainer.appendChild(indicator);
     }
 
-    // Mostrar primer slide
     showSlide(currentSlide);
-
-    // Iniciar auto-slide
     startAutoSlide();
 
-    // Pausar al hacer hover
     const carouselContainer = document.querySelector('.carousel-container');
     if (carouselContainer) {
         carouselContainer.addEventListener('mouseenter', pauseAutoSlide);
         carouselContainer.addEventListener('mouseleave', resumeAutoSlide);
     }
-
-    console.log('✅ Carrusel inicializado');
 }
 
 function showSlide(n) {
@@ -457,16 +663,13 @@ function resetAutoSlide() {
 
 // ============================================
 // FUNCIONES DEL MODAL DE GALERÍA
-// ============================================ */
+// ============================================
 
 function openModal(element) {
     const modal = document.getElementById('mediaModal');
     const modalImg = document.getElementById('modalImage');
 
-    if (!modal || !modalImg) {
-        console.error('❌ Elementos del modal no encontrados');
-        return;
-    }
+    if (!modal || !modalImg) return;
 
     const mediaType = element.getAttribute('data-type');
     const imgElement = element.querySelector('img');
@@ -483,11 +686,9 @@ function openModal(element) {
 
 function closeModal() {
     const modal = document.getElementById('mediaModal');
-
     if (!modal) return;
 
     modal.classList.remove('show');
-
     setTimeout(() => {
         modal.style.display = 'none';
     }, 300);
@@ -495,7 +696,6 @@ function closeModal() {
     document.body.style.overflow = 'auto';
 }
 
-// Cerrar modal al hacer clic fuera
 document.addEventListener('click', function(e) {
     const modal = document.getElementById('mediaModal');
     if (e.target === modal) {
@@ -505,43 +705,30 @@ document.addEventListener('click', function(e) {
 
 // ============================================
 // FUNCIONES DEL MODAL DE RESERVAS
-// ============================================ */
+// ============================================
 
 function openBookingModal() {
     const modal = document.getElementById('bookingModal');
-
-    if (!modal) {
-        console.error('❌ Modal de reservas no encontrado');
-        return;
-    }
+    if (!modal) return;
 
     modal.style.display = 'block';
     setTimeout(() => modal.classList.add('show'), 10);
     document.body.style.overflow = 'hidden';
 
-    // Inicializar formulario
     initializeBookingForm();
-
-    console.log('📅 Modal de reservas abierto');
 }
 
 function closeBookingModal() {
     const modal = document.getElementById('bookingModal');
-
     if (!modal) return;
 
     modal.classList.remove('show');
-
     setTimeout(() => {
         modal.style.display = 'none';
     }, 300);
 
     document.body.style.overflow = 'auto';
-
-    // Resetear formulario
     resetBookingForm();
-
-    console.log('❌ Modal de reservas cerrado');
 }
 
 function initializeBookingForm() {
@@ -550,35 +737,73 @@ function initializeBookingForm() {
     const dateInput = document.getElementById('appointmentDate');
     const timeSelect = document.getElementById('appointmentTime');
 
-    if (!form || !serviceSelect || !dateInput || !timeSelect) {
-        console.error('❌ Elementos del formulario de reservas no encontrados');
-        return;
-    }
+    if (!form || !serviceSelect || !dateInput || !timeSelect) return;
 
-    // Establecer fecha mínima (hoy) - CORREGIDO para usar zona horaria de Chile
     const today = new Date();
-    // Forzar zona horaria de Chile (America/Santiago)
     const todayChile = new Date(today.toLocaleString("en-US", {timeZone: "America/Santiago"}));
     const minDate = getLocalISODate(todayChile);
+    
     dateInput.min = minDate;
-
-    // Establecer fecha por defecto (hoy) - CORREGIDO
     dateInput.value = minDate;
 
-    // Actualizar horarios disponibles cuando cambie la fecha
     dateInput.addEventListener('change', updateTimeSlotsAvailability);
-
-    // Actualizar resumen cuando cambien los valores
     form.addEventListener('change', updateBookingSummary);
-
-    // Manejar envío del formulario
     form.addEventListener('submit', handleBookingSubmit);
 
-    // Inicializar horarios disponibles para la fecha seleccionada
     updateTimeSlotsAvailability();
+}
 
-    console.log('✅ Formulario de reservas inicializado');
-    console.log('📅 Fecha mínima establecida:', minDate);
+/**
+ * Actualizar horarios disponibles/ocupados en el select
+ * Consulta Firebase en tiempo real para cada hora
+ */
+async function updateTimeSlotsAvailability() {
+    const dateInput = document.getElementById('appointmentDate');
+    const timeSelect = document.getElementById('appointmentTime');
+
+    if (!dateInput || !timeSelect) return;
+
+    const selectedDate = dateInput.value;
+    if (!selectedDate) return;
+
+    console.log('🔄 Actualizando horarios para fecha:', selectedDate);
+
+    // Limpiar opciones anteriores
+    while (timeSelect.children.length > 1) {
+        timeSelect.removeChild(timeSelect.lastChild);
+    }
+
+    const availableTimes = [
+        '09:00', '10:00', '11:00', '12:00',
+        '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
+    ];
+
+    // Verificar disponibilidad de cada hora
+    for (const time of availableTimes) {
+        const option = document.createElement('option');
+        option.value = time;
+
+        try {
+            const isAvailable = await isTimeSlotAvailable(selectedDate, time);
+
+            if (isAvailable) {
+                option.textContent = `${time} - Disponible`;
+                option.className = 'time-available';
+            } else {
+                option.textContent = `${time} - Hora ocupada`;
+                option.className = 'time-occupied';
+                option.disabled = true;
+            }
+        } catch (error) {
+            console.error('❌ Error verificando horario:', time, error);
+            option.textContent = `${time} - Disponible`;
+            option.className = 'time-available';
+        }
+
+        timeSelect.appendChild(option);
+    }
+
+    console.log(`📅 Horarios actualizados para ${selectedDate}`);
 }
 
 function updateBookingSummary() {
@@ -591,16 +816,12 @@ function updateBookingSummary() {
     const summaryDateTime = document.getElementById('summaryDateTime');
     const summaryTotal = document.getElementById('summaryTotal');
 
-    if (!summary || !summaryService || !summaryDateTime || !summaryTotal) {
-        return;
-    }
+    if (!summary || !summaryService || !summaryDateTime || !summaryTotal) return;
 
-    // Obtener valores
     const serviceText = serviceSelect.options[serviceSelect.selectedIndex].text;
     const dateValue = dateInput.value;
     const timeValue = timeSelect.value;
 
-    // Formatear fecha
     let formattedDateTime = 'No seleccionado';
     if (dateValue && timeValue) {
         const date = new Date(dateValue + 'T' + timeValue);
@@ -614,15 +835,12 @@ function updateBookingSummary() {
         });
     }
 
-    // Calcular precio
     const servicePrice = getServicePrice(serviceSelect.value);
 
-    // Actualizar resumen
     summaryService.textContent = serviceText;
     summaryDateTime.textContent = formattedDateTime;
     summaryTotal.textContent = `$${servicePrice.toLocaleString('es-CL')}`;
 
-    // Mostrar resumen
     summary.style.display = 'block';
 }
 
@@ -633,17 +851,15 @@ function getServicePrice(serviceValue) {
         'barba': 5000,
         'cejas': 2000
     };
-
     return prices[serviceValue] || 0;
 }
 
-function handleBookingSubmit(event) {
+async function handleBookingSubmit(event) {
     event.preventDefault();
 
     const form = document.getElementById('bookingForm');
     const formData = new FormData(form);
 
-    // Obtener valores del formulario
     const bookingData = {
         customerName: formData.get('customerName'),
         customerPhone: formData.get('customerPhone'),
@@ -653,12 +869,19 @@ function handleBookingSubmit(event) {
         specialRequests: formData.get('specialRequests')
     };
 
-    // Validar datos
     if (!validateBookingData(bookingData)) {
         return;
     }
 
-    // Mostrar confirmación
+    // Marcar la hora como ocupada en Firebase
+    const success = await bookTimeSlot(bookingData.appointmentDate, bookingData.appointmentTime);
+
+    if (!success) {
+        alert('❌ Lo sentimos, esta hora acaba de ser reservada por otro cliente. Por favor selecciona otra hora.');
+        updateTimeSlotsAvailability();
+        return;
+    }
+
     showBookingConfirmation(bookingData);
 }
 
@@ -693,16 +916,9 @@ function validateBookingData(data) {
         return false;
     }
 
-    // Validar que la fecha no sea en el pasado
     const selectedDate = new Date(data.appointmentDate + 'T00:00:00');
     const today = new Date();
-
-    // Crear fecha de hoy en zona horaria local (America/Santiago)
     const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
-
-    console.log('Fecha seleccionada:', selectedDate);
-    console.log('Fecha de hoy (local):', todayLocal);
-    console.log('Comparación:', selectedDate < todayLocal);
 
     if (selectedDate < todayLocal) {
         alert('La fecha seleccionada no puede ser en el pasado');
@@ -710,7 +926,6 @@ function validateBookingData(data) {
         return false;
     }
 
-    // Verificar si el día está bloqueado
     if (isDayBlocked(data.appointmentDate)) {
         const blockedDayInfo = blockedDays[getLocalISODate(new Date(data.appointmentDate))];
         const reason = blockedDayInfo && blockedDayInfo.reason ? `\n\nMotivo: ${blockedDayInfo.reason}` : '';
@@ -723,7 +938,6 @@ function validateBookingData(data) {
 }
 
 function showBookingConfirmation(bookingData) {
-    // Crear mensaje de confirmación
     const serviceText = document.querySelector(`#serviceType option[value="${bookingData.serviceType}"]`).textContent;
 
     const confirmationMessage = `
@@ -732,99 +946,30 @@ NUEVA RESERVA - ALEX BARBER
 👤 Cliente: ${bookingData.customerName}
 📱 Teléfono: ${bookingData.customerPhone}
 
-✂ Servicio: ${serviceText}
+✂️ Servicio: ${serviceText}
 📅 Fecha: ${new Date(bookingData.appointmentDate).toLocaleDateString('es-CL')}
 🕐 Hora: ${bookingData.appointmentTime}
-💰 Precio: $${getServicePrice(bookingData.serviceType).toLocaleString()}
+💰 Precio: ${getServicePrice(bookingData.serviceType).toLocaleString()}
 
-✅ Reserva solicitada
-⏰ Espera tu confirmación
+✅ Reserva confirmada
+⏰ Te esperamos
     `.trim();
 
-    // Codificar mensaje para URL
     const encodedMessage = encodeURIComponent(confirmationMessage);
-
-    // Crear enlace de WhatsApp
     const whatsappURL = `https://wa.me/56926257862?text=${encodedMessage}`;
 
-    // Abrir WhatsApp en nueva ventana
     const whatsappWindow = window.open(whatsappURL, '_blank');
 
-    // Si no se pudo abrir WhatsApp, mostrar alternativa
     if (!whatsappWindow) {
-        // Fallback: mostrar confirmación y permitir copiar el mensaje
-        if (confirm(confirmationMessage + '\n\nNo se pudo abrir WhatsApp automáticamente. ¿Deseas copiar el mensaje para enviarlo manualmente?')) {
+        if (confirm(confirmationMessage + '\n\n¿Deseas copiar el mensaje para enviarlo manualmente?')) {
             navigator.clipboard.writeText(confirmationMessage).then(() => {
-                alert('✅ Mensaje copiado al portapapeles. Pégalo en WhatsApp manualmente.');
+                alert('✅ Mensaje copiado al portapapeles');
             });
         }
     }
 
-    // Marcar la hora como ocupada ANTES de cerrar el modal usando Firebase
-    bookTimeSlot(bookingData.appointmentDate, bookingData.appointmentTime);
-
-    // Cerrar modal y resetear formulario
     closeBookingModal();
-
-    // Aquí podrías enviar los datos a un servidor
-    console.log('📋 Datos de reserva:', bookingData);
-    console.log('📱 Enviando reserva por WhatsApp...');
-    console.log('🔗 URL de WhatsApp:', whatsappURL);
-}
-
-function printBookingDetails(bookingData) {
-    const printWindow = window.open('', '_blank');
-    const serviceText = document.querySelector(`#serviceType option[value="${bookingData.serviceType}"]`).textContent;
-
-    printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Confirmación de Reserva - Alex Barber</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .header { text-align: center; margin-bottom: 30px; }
-                .details { margin: 20px 0; }
-                .detail-row { margin: 10px 0; }
-                .label { font-weight: bold; }
-                .footer { margin-top: 30px; text-align: center; font-style: italic; }
-            </style>
-        </head>
-        <body>
-            <div class="header">
-                <h1>✂️ Alex Barber</h1>
-                <h2>Confirmación de Reserva</h2>
-            </div>
-            <div class="details">
-                <div class="detail-row">
-                    <span class="label">Cliente:</span> ${bookingData.customerName}
-                </div>
-                <div class="detail-row">
-                    <span class="label">Teléfono:</span> ${bookingData.customerPhone}
-                </div>
-                <div class="detail-row">
-                    <span class="label">Servicio:</span> ${serviceText}
-                </div>
-                <div class="detail-row">
-                    <span class="label">Fecha:</span> ${new Date(bookingData.appointmentDate).toLocaleDateString('es-CL')}
-                </div>
-                <div class="detail-row">
-                    <span class="label">Hora:</span> ${bookingData.appointmentTime}
-                </div>
-                <div class="detail-row">
-                    <span class="label">Total:</span> $${getServicePrice(bookingData.serviceType).toLocaleString()}
-                </div>
-            </div>
-            <div class="footer">
-                <p>¡Te esperamos en nuestro local!</p>
-                <p>Vega Monumental Pasillo 8 Local 190</p>
-            </div>
-        </body>
-        </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.print();
+    console.log('📋 Reserva confirmada:', bookingData);
 }
 
 function resetBookingForm() {
@@ -838,162 +983,6 @@ function resetBookingForm() {
     if (summary) {
         summary.style.display = 'none';
     }
-
-    console.log('🔄 Formulario de reservas reseteado');
-}
-
-
-// ============================================
-// FUNCIONES DEL SISTEMA DE RESERVAS OCUPADAS (CORREGIDAS)
-// ============================================
-
-function loadBookedAppointments() {
-    try {
-        const saved = localStorage.getItem('alexBarberAppointments');
-        if (saved) {
-            bookedAppointments = JSON.parse(saved);
-            console.log('📅 Reservas cargadas:', Object.keys(bookedAppointments).length);
-        } else {
-            bookedAppointments = {};
-            console.log('📅 No hay reservas guardadas, iniciando con lista vacía');
-        }
-
-        // 🧹 LIMPIAR RESERVAS ANTIGUAS AUTOMÁTICAMENTE
-        const today = getLocalISODate(new Date());
-        let removed = 0;
-        for (let date in bookedAppointments) {
-            if (date < today) {
-                delete bookedAppointments[date];
-                removed++;
-            }
-        }
-        if (removed > 0) {
-            saveBookedAppointments();
-            console.log(`🧹 ${removed} reservas antiguas eliminadas automáticamente`);
-        }
-
-    } catch (error) {
-        console.error('❌ Error al cargar reservas:', error);
-        bookedAppointments = {};
-    }
-}
-
-function saveBookedAppointments() {
-    try {
-        localStorage.setItem('alexBarberAppointments', JSON.stringify(bookedAppointments));
-        console.log('💾 Reservas guardadas exitosamente');
-    } catch (error) {
-        console.error('❌ Error al guardar reservas:', error);
-    }
-}
-
-async function isTimeSlotAvailable(date, time) {
-    try {
-        const dateKey = date;
-        const docRef = db.collection('reservas').doc(dateKey);
-        const doc = await docRef.get();
-
-        if (!doc.exists) return true;
-        const dayData = doc.data().horas || [];
-        return !dayData.includes(time);
-
-    } catch (error) {
-        console.error('❌ Error al verificar disponibilidad en Firebase:', error);
-        return true; // En caso de error, asumir disponible para no bloquear reservas
-    }
-}
-
-async function bookTimeSlot(date, time) {
-    try {
-        const dateKey = date;
-        const docRef = db.collection('reservas').doc(dateKey);
-        const doc = await docRef.get();
-
-        let dayData = [];
-        if (doc.exists) {
-            dayData = doc.data().horas || [];
-        }
-
-        if (!dayData.includes(time)) {
-            dayData.push(time);
-            await docRef.set({
-                horas: dayData,
-                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            console.log(`✅ Hora ${time} marcada como ocupada en Firebase para ${dateKey}`);
-            return true;
-        } else {
-            console.log(`❌ Hora ${time} ya está ocupada para ${dateKey}`);
-            return false;
-        }
-
-    } catch (error) {
-        console.error('❌ Error al reservar hora en Firebase:', error);
-        return false;
-    }
-}
-
-async function updateTimeSlotsAvailability() {
-    const dateInput = document.getElementById('appointmentDate');
-    const timeSelect = document.getElementById('appointmentTime');
-
-    if (!dateInput || !timeSelect) {
-        console.error('❌ Elementos del formulario no encontrados');
-        return;
-    }
-
-    const selectedDate = dateInput.value;
-    if (!selectedDate) {
-        console.log('📅 No hay fecha seleccionada');
-        return;
-    }
-
-    console.log('🔄 Actualizando horarios para fecha:', selectedDate);
-
-    // Limpiar las opciones anteriores (mantener solo la primera opción)
-    while (timeSelect.children.length > 1) {
-        timeSelect.removeChild(timeSelect.lastChild);
-    }
-
-    // Horarios disponibles
-    const availableTimes = [
-        '09:00', '10:00', '11:00', '12:00',
-        '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
-    ];
-
-    console.log('⏰ Verificando disponibilidad de horarios en Firebase...');
-
-    // Usar Firebase para verificar disponibilidad
-    for (const time of availableTimes) {
-        const option = document.createElement('option');
-        option.value = time;
-
-        try {
-            console.log(`🔍 Verificando horario ${time}...`);
-            const isAvailable = await isTimeSlotAvailable(selectedDate, time);
-
-            if (isAvailable) {
-                option.textContent = `${time} - Disponible`;
-                option.className = 'time-available';
-                console.log(`✅ ${time} - Disponible`);
-            } else {
-                option.textContent = `${time} - Hora ocupada`;
-                option.className = 'time-occupied';
-                option.disabled = true;
-                console.log(`❌ ${time} - Hora ocupada`);
-            }
-        } catch (error) {
-            console.error('❌ Error verificando disponibilidad para horario:', time, error);
-            // En caso de error, mostrar como disponible para no bloquear reservas
-            option.textContent = `${time} - Disponible (Error)`;
-            option.className = 'time-available';
-            console.log(`⚠️ ${time} - Disponible (Error de conexión)`);
-        }
-
-        timeSelect.appendChild(option);
-    }
-
-    console.log(`📅 Horarios actualizados para ${selectedDate}. Total opciones:`, timeSelect.children.length - 1);
 }
 
 // ============================================
@@ -1008,7 +997,6 @@ function loadBlockedDays() {
             console.log('🚫 Días bloqueados cargados:', Object.keys(blockedDays).length);
         } else {
             blockedDays = {};
-            console.log('🚫 No hay días bloqueados, iniciando con lista vacía');
         }
     } catch (error) {
         console.error('❌ Error al cargar días bloqueados:', error);
@@ -1043,7 +1031,7 @@ function blockDay(date, reason = '') {
         return true;
     }
 
-    return false; // Ya estaba bloqueado
+    return false;
 }
 
 function unblockDay(date) {
@@ -1056,17 +1044,14 @@ function unblockDay(date) {
         return true;
     }
 
-    return false; // No estaba bloqueado
+    return false;
 }
 
 function addBlockedDay() {
     const dateInput = document.getElementById('blockedDate');
     const reasonInput = document.getElementById('blockedReason');
 
-    if (!dateInput || !reasonInput) {
-        console.error('❌ Elementos del formulario de días bloqueados no encontrados');
-        return;
-    }
+    if (!dateInput || !reasonInput) return;
 
     const selectedDate = dateInput.value;
     const reason = reasonInput.value.trim();
@@ -1077,7 +1062,6 @@ function addBlockedDay() {
         return;
     }
 
-    // Validar que la fecha no sea en el pasado
     const selectedDateObj = new Date(selectedDate + 'T00:00:00');
     const today = new Date();
     const todayLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
@@ -1093,8 +1077,6 @@ function addBlockedDay() {
         dateInput.value = '';
         reasonInput.value = '';
         refreshBlockedDaysList();
-
-        // Actualizar los horarios disponibles si el formulario de reservas está abierto
         updateTimeSlotsAvailability();
     } else {
         alert('Este día ya está bloqueado');
@@ -1105,11 +1087,7 @@ function removeBlockedDay(date) {
     if (unblockDay(date)) {
         alert(`✅ Día ${formatDateDisplay(date)} desbloqueado exitosamente`);
         refreshBlockedDaysList();
-
-        // Actualizar los horarios disponibles si el formulario de reservas está abierto
         updateTimeSlotsAvailability();
-    } else {
-        alert('Este día no estaba bloqueado');
     }
 }
 
@@ -1119,14 +1097,11 @@ function clearAllBlockedDays() {
         return;
     }
 
-    if (confirm('¿Estás seguro de que deseas desbloquear TODOS los días? Esta acción no se puede deshacer.')) {
+    if (confirm('¿Estás seguro de que deseas desbloquear TODOS los días?')) {
         blockedDays = {};
         saveBlockedDays();
         refreshBlockedDaysList();
-
-        // Actualizar los horarios disponibles si el formulario de reservas está abierto
         updateTimeSlotsAvailability();
-
         console.log('🗑️ Todos los días bloqueados eliminados');
     }
 }
@@ -1135,7 +1110,6 @@ function refreshBlockedDaysList() {
     const blockedDaysList = document.getElementById('blockedDaysList');
     if (!blockedDaysList) return;
 
-    // Limpiar lista actual
     blockedDaysList.innerHTML = '';
 
     if (Object.keys(blockedDays).length === 0) {
@@ -1143,7 +1117,6 @@ function refreshBlockedDaysList() {
         return;
     }
 
-    // Crear lista de días bloqueados ordenados por fecha
     const sortedDates = Object.keys(blockedDays).sort();
 
     sortedDates.forEach(date => {
@@ -1172,7 +1145,6 @@ function refreshBlockedDaysList() {
         const unblockBtn = document.createElement('button');
         unblockBtn.className = 'btn btn-secondary btn-small';
         unblockBtn.innerHTML = '<i class="fas fa-unlock"></i> Desbloquear';
-        unblockBtn.title = 'Desbloquear día';
         unblockBtn.onclick = () => removeBlockedDay(date);
 
         dayActions.appendChild(unblockBtn);
@@ -1182,8 +1154,6 @@ function refreshBlockedDaysList() {
 
         blockedDaysList.appendChild(dayItem);
     });
-
-    console.log('📋 Lista de días bloqueados actualizada');
 }
 
 function exportBlockedDays() {
@@ -1192,7 +1162,6 @@ function exportBlockedDays() {
         return;
     }
 
-    // Crear contenido del archivo
     let exportContent = 'DÍAS BLOQUEADOS - ALEX BARBER\n';
     exportContent += '================================\n\n';
 
@@ -1209,18 +1178,15 @@ function exportBlockedDays() {
     exportContent += `\nTotal de días bloqueados: ${Object.keys(blockedDays).length}\n`;
     exportContent += `Exportado el: ${new Date().toLocaleString('es-CL')}\n`;
 
-    // Crear y descargar archivo
     const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dias-bloqueados-alex-barber-${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `dias-bloqueados-alex-barber-${getLocalISODate()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
-
-    console.log('📄 Días bloqueados exportados exitosamente');
 }
 
 // ============================================
@@ -1229,37 +1195,28 @@ function exportBlockedDays() {
 
 function openAdminModal() {
     const modal = document.getElementById('adminModal');
-
-    if (!modal) {
-        console.error('❌ Modal de administración no encontrado');
-        return;
-    }
+    if (!modal) return;
 
     modal.style.display = 'block';
     setTimeout(() => modal.classList.add('show'), 10);
     document.body.style.overflow = 'hidden';
 
-    // Enfocar el campo de contraseña
     setTimeout(() => {
         const passwordInput = document.getElementById('adminPassword');
         if (passwordInput) {
             passwordInput.focus();
         }
     }, 100);
-
-    console.log('🔐 Modal de administración abierto');
 }
 
 function closeAdminModal() {
     const modal = document.getElementById('adminModal');
-
     if (!modal) return;
 
     modal.classList.remove('show');
 
     setTimeout(() => {
         modal.style.display = 'none';
-        // Resetear formulario de login
         const loginForm = document.getElementById('adminLoginForm');
         const adminPanel = document.getElementById('adminPanel');
         const passwordInput = document.getElementById('adminPassword');
@@ -1272,29 +1229,23 @@ function closeAdminModal() {
     }, 300);
 
     document.body.style.overflow = 'auto';
-
-    console.log('🔐 Modal de administración cerrado');
 }
 
 function adminLogin() {
     const passwordInput = document.getElementById('adminPassword');
     const password = passwordInput.value;
 
-    // Contraseña de administrador (puedes cambiarla aquí)
     const adminPassword = 'admin123';
 
     if (password === adminPassword) {
         isAdminLoggedIn = true;
 
-        // Ocultar formulario de login
         const loginForm = document.getElementById('adminLoginForm');
         if (loginForm) loginForm.style.display = 'none';
 
-        // Mostrar panel de administración
         const adminPanel = document.getElementById('adminPanel');
         if (adminPanel) adminPanel.style.display = 'block';
 
-        // Cargar datos iniciales
         refreshBookingsList();
         loadSettings();
 
@@ -1307,12 +1258,10 @@ function adminLogin() {
 }
 
 function showAdminSection(section) {
-    // Ocultar todas las secciones
     const bookingsSection = document.getElementById('adminBookingsSection');
     const blockedDaysSection = document.getElementById('adminBlockedDaysSection');
     const settingsSection = document.getElementById('adminSettingsSection');
 
-    // Remover clase active de todos los botones
     const navButtons = document.querySelectorAll('.admin-nav-btn');
 
     if (section === 'bookings') {
@@ -1327,7 +1276,6 @@ function showAdminSection(section) {
         if (blockedDaysSection) blockedDaysSection.style.display = 'block';
         if (settingsSection) settingsSection.style.display = 'none';
 
-        // Cargar lista de días bloqueados cuando se muestra la sección
         refreshBlockedDaysList();
 
         navButtons.forEach(btn => btn.classList.remove('active'));
@@ -1346,7 +1294,6 @@ function refreshBookingsList() {
     const bookingsList = document.getElementById('bookingsList');
     if (!bookingsList) return;
 
-    // Limpiar lista actual
     bookingsList.innerHTML = '';
 
     if (Object.keys(bookedAppointments).length === 0) {
@@ -1354,13 +1301,11 @@ function refreshBookingsList() {
         return;
     }
 
-    // Crear lista de reservas organizadas por fecha
     const sortedDates = Object.keys(bookedAppointments).sort();
 
     sortedDates.forEach(date => {
         const dateAppointments = bookedAppointments[date];
 
-        // Crear contenedor de fecha
         const dateContainer = document.createElement('div');
         dateContainer.className = 'date-container';
 
@@ -1369,7 +1314,6 @@ function refreshBookingsList() {
         dateTitle.textContent = formatDateDisplay(date);
         dateContainer.appendChild(dateTitle);
 
-        // Crear lista de horarios para esta fecha
         const timesList = document.createElement('div');
         timesList.className = 'times-list';
 
@@ -1385,7 +1329,11 @@ function refreshBookingsList() {
             deleteBtn.className = 'btn-delete-time';
             deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
             deleteBtn.title = 'Eliminar reserva';
-            deleteBtn.onclick = () => deleteBooking(date, time);
+            deleteBtn.onclick = () => {
+                if (confirm(`¿Estás seguro de que deseas eliminar la reserva del ${formatDateDisplay(date)} a las ${time}?`)) {
+                    deleteBooking(date, time);
+                }
+            };
 
             timeItem.appendChild(timeInfo);
             timeItem.appendChild(deleteBtn);
@@ -1395,8 +1343,6 @@ function refreshBookingsList() {
         dateContainer.appendChild(timesList);
         bookingsList.appendChild(dateContainer);
     });
-
-    console.log('📋 Lista de reservas actualizada');
 }
 
 function formatDateDisplay(dateString) {
@@ -1409,51 +1355,12 @@ function formatDateDisplay(dateString) {
     });
 }
 
-function deleteBooking(date, time) {
-    if (confirm(`¿Estás seguro de que deseas eliminar la reserva del ${formatDateDisplay(date)} a las ${time}?`)) {
-        const dateAppointments = bookedAppointments[date];
-        if (dateAppointments) {
-            const index = dateAppointments.indexOf(time);
-            if (index > -1) {
-                dateAppointments.splice(index, 1);
-
-                // Si no quedan horarios para esta fecha, eliminar la fecha completa
-                if (dateAppointments.length === 0) {
-                    delete bookedAppointments[date];
-                }
-
-                saveBookedAppointments();
-                refreshBookingsList();
-
-                // Actualizar los horarios disponibles en el formulario de reservas si está abierto
-                updateTimeSlotsAvailability();
-
-                console.log(`🗑️ Reserva eliminada: ${date} ${time}`);
-            }
-        }
-    }
-}
-
-function clearAllBookings() {
-    if (confirm('¿Estás seguro de que deseas eliminar TODAS las reservas? Esta acción no se puede deshacer.')) {
-        bookedAppointments = {};
-        saveBookedAppointments();
-        refreshBookingsList();
-
-        // Actualizar los horarios disponibles en el formulario de reservas si está abierto
-        updateTimeSlotsAvailability();
-
-        console.log('🗑️ Todas las reservas eliminadas');
-    }
-}
-
 function exportBookings() {
     if (Object.keys(bookedAppointments).length === 0) {
         alert('No hay reservas para exportar.');
         return;
     }
 
-    // Crear contenido del archivo
     let exportContent = 'RESERVAS - ALEX BARBER\n';
     exportContent += '================================\n\n';
 
@@ -1473,18 +1380,15 @@ function exportBookings() {
     exportContent += `\nTotal de reservas: ${Object.values(bookedAppointments).reduce((total, day) => total + day.length, 0)}\n`;
     exportContent += `Exportado el: ${new Date().toLocaleString('es-CL')}\n`;
 
-    // Crear y descargar archivo
     const blob = new Blob([exportContent], { type: 'text/plain;charset=utf-8' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `reservas-alex-barber-${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `reservas-alex-barber-${getLocalISODate()}.txt`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
-
-    console.log('📄 Reservas exportadas exitosamente');
 }
 
 function saveSettings() {
@@ -1498,17 +1402,9 @@ function saveSettings() {
         whatsappNumber
     };
 
-    // Guardar en localStorage
     localStorage.setItem('alexBarberSettings', JSON.stringify(adminSettings));
 
-    // Actualizar número de WhatsApp en el código
-    if (typeof whatsappNumber !== 'undefined') {
-        // Aquí podrías actualizar dinámicamente el número en showBookingConfirmation
-        console.log('📱 Número de WhatsApp actualizado:', whatsappNumber);
-    }
-
     alert('✅ Configuración guardada exitosamente');
-    console.log('💾 Configuración guardada');
 }
 
 function loadSettings() {
@@ -1518,7 +1414,6 @@ function loadSettings() {
             const settings = JSON.parse(savedSettings);
             adminSettings = { ...adminSettings, ...settings };
 
-            // Cargar valores en el formulario
             const openingTimeSelect = document.getElementById('openingTime');
             const closingTimeSelect = document.getElementById('closingTime');
             const whatsappInput = document.getElementById('whatsappNumber');
@@ -1526,15 +1421,13 @@ function loadSettings() {
             if (openingTimeSelect) openingTimeSelect.value = adminSettings.openingTime;
             if (closingTimeSelect) closingTimeSelect.value = adminSettings.closingTime;
             if (whatsappInput) whatsappInput.value = adminSettings.whatsappNumber;
-
-            console.log('⚙️ Configuración cargada');
         }
     } catch (error) {
         console.error('❌ Error al cargar configuración:', error);
     }
 }
 
-// Cerrar modal de administración al hacer clic fuera
+// Cerrar modales al hacer clic fuera
 document.addEventListener('click', function(e) {
     const adminModal = document.getElementById('adminModal');
     if (e.target === adminModal) {
@@ -1542,465 +1435,12 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Cerrar modal de reservas al hacer clic fuera
 document.addEventListener('click', function(e) {
     const bookingModal = document.getElementById('bookingModal');
     if (e.target === bookingModal) {
         closeBookingModal();
     }
 });
-
-// ============================================
-// SISTEMA DE AUTOGUARDADO AUTOMÁTICO
-// ============================================
-
-function initializeAutoSave() {
-    console.log('🔄 Inicializando sistema de autoguardado...');
-
-    // Iniciar intervalo de autoguardado
-    startAutoSave();
-
-    // Monitorear cambios en tiempo real
-    monitorDataChanges();
-
-    // Crear respaldos automáticos
-    scheduleAutoBackup();
-
-    console.log('✅ Sistema de autoguardado inicializado');
-}
-
-function startAutoSave() {
-    if (autoSaveInterval) {
-        clearInterval(autoSaveInterval);
-    }
-
-    autoSaveInterval = setInterval(() => {
-        if (pendingChanges) {
-            performAutoSave();
-        }
-    }, AUTOSAVE_DELAY);
-
-    console.log(`⏰ Autoguardado configurado cada ${AUTOSAVE_DELAY/1000} segundos`);
-}
-
-function monitorDataChanges() {
-    // Monitorear cambios en reservas
-    const originalBookedAppointments = JSON.stringify(bookedAppointments);
-
-    // Monitorear cambios en días bloqueados
-    const originalBlockedDays = JSON.stringify(blockedDays);
-
-    // Monitorear cambios en configuración
-    const originalSettings = JSON.stringify(adminSettings);
-
-    // Verificar cambios cada segundo
-    setInterval(() => {
-        if (JSON.stringify(bookedAppointments) !== originalBookedAppointments) {
-            markPendingChanges();
-        }
-
-        if (JSON.stringify(blockedDays) !== originalBlockedDays) {
-            markPendingChanges();
-        }
-
-        if (JSON.stringify(adminSettings) !== originalSettings) {
-            markPendingChanges();
-        }
-    }, 1000);
-}
-
-function markPendingChanges() {
-    pendingChanges = true;
-    console.log('📝 Cambios pendientes detectados');
-}
-
-function performAutoSave() {
-    try {
-        // Guardar reservas
-        if (Object.keys(bookedAppointments).length > 0) {
-            saveBookedAppointments();
-        }
-
-        // Guardar días bloqueados
-        if (Object.keys(blockedDays).length > 0) {
-            saveBlockedDays();
-        }
-
-        // Guardar configuración
-        if (adminSettings) {
-            localStorage.setItem('alexBarberSettings', JSON.stringify(adminSettings));
-        }
-
-        // Actualizar timestamp
-        lastSaveTimestamp = Date.now();
-        pendingChanges = false;
-
-        console.log('💾 Autoguardado realizado exitosamente');
-        showAutoSaveNotification();
-
-    } catch (error) {
-        console.error('❌ Error en autoguardado:', error);
-    }
-}
-
-function showAutoSaveNotification() {
-    // Crear notificación sutil de autoguardado
-    const notification = document.createElement('div');
-    notification.className = 'auto-save-notification';
-    notification.innerHTML = `
-        <i class="fas fa-check-circle"></i>
-        <span>Guardado automático</span>
-    `;
-
-    // Estilos para la notificación
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: linear-gradient(135deg, var(--primary-color), #FFD700);
-        color: var(--secondary-color);
-        padding: 10px 15px;
-        border-radius: 25px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.9rem;
-        font-weight: 600;
-        box-shadow: 0 4px 15px rgba(212, 175, 55, 0.4);
-        z-index: 10000;
-        animation: slideInRight 0.3s ease;
-    `;
-
-    document.body.appendChild(notification);
-
-    // Remover notificación después de 3 segundos
-    setTimeout(() => {
-        notification.style.animation = 'slideOutRight 0.3s ease';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 300);
-    }, 3000);
-}
-
-function scheduleAutoBackup() {
-    // Crear respaldo automático cada día a la medianoche
-    const now = new Date();
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-    const timeUntilMidnight = midnight.getTime() - now.getTime();
-
-    setTimeout(() => {
-        createAutomaticBackup();
-        // Programar próximo respaldo para el día siguiente
-        setInterval(createAutomaticBackup, 24 * 60 * 60 * 1000);
-    }, timeUntilMidnight);
-
-    console.log('📦 Sistema de respaldos automáticos programado');
-}
-
-function createAutomaticBackup() {
-    try {
-        const backupData = {
-            timestamp: new Date().toISOString(),
-            version: '2.0',
-            data: {
-                bookedAppointments,
-                blockedDays,
-                adminSettings
-            },
-            stats: {
-                totalBookings: Object.values(bookedAppointments).reduce((total, day) => total + day.length, 0),
-                totalBlockedDays: Object.keys(blockedDays).length,
-                lastModified: lastSaveTimestamp
-            }
-        };
-
-        const backupKey = `alexBarberBackup_${getLocalISODate()}`;
-        localStorage.setItem(backupKey, JSON.stringify(backupData));
-
-        // Mantener solo los últimos 7 respaldos
-        cleanupOldBackups();
-
-        console.log('💾 Respaldo automático creado:', backupKey);
-
-    } catch (error) {
-        console.error('❌ Error al crear respaldo automático:', error);
-    }
-}
-
-function cleanupOldBackups() {
-    try {
-        const backupKeys = Object.keys(localStorage).filter(key =>
-            key.startsWith('alexBarberBackup_')
-        );
-
-        if (backupKeys.length > 7) {
-            // Ordenar por fecha y eliminar los más antiguos
-            backupKeys.sort().reverse();
-
-            const keysToDelete = backupKeys.slice(7);
-            keysToDelete.forEach(key => {
-                localStorage.removeItem(key);
-            });
-
-            console.log(`🗑️ Respaldos antiguos eliminados: ${keysToDelete.length}`);
-        }
-    } catch (error) {
-        console.error('❌ Error al limpiar respaldos antiguos:', error);
-    }
-}
-
-function generateCodeAutomatically() {
-    console.log('🤖 Generando código automáticamente...');
-
-    // Generar función de respaldo de emergencia
-    const emergencyBackupCode = `
-function emergencyDataRecovery() {
-    console.log('🚨 Ejecutando recuperación de emergencia...');
-
-    try {
-        // Buscar el respaldo más reciente
-        const backupKeys = Object.keys(localStorage).filter(key =>
-            key.startsWith('alexBarberBackup_')
-        );
-
-        if (backupKeys.length > 0) {
-            const latestBackup = backupKeys.sort().pop();
-            const backupData = JSON.parse(localStorage.getItem(latestBackup));
-
-            // Restaurar datos
-            bookedAppointments = backupData.data.bookedAppointments || {};
-            blockedDays = backupData.data.blockedDays || {};
-            adminSettings = backupData.data.adminSettings || {};
-
-            console.log('✅ Datos recuperados del respaldo:', latestBackup);
-            return true;
-        }
-    } catch (error) {
-        console.error('❌ Error en recuperación de emergencia:', error);
-    }
-
-    return false;
-}
-    `;
-
-    // Agregar función al contexto global si no existe
-    if (typeof window.emergencyDataRecovery === 'undefined') {
-        // Inyectar código en la página
-        const script = document.createElement('script');
-        script.textContent = emergencyBackupCode;
-        document.head.appendChild(script);
-
-        console.log('💉 Código de recuperación de emergencia inyectado');
-    }
-
-    return emergencyBackupCode;
-}
-
-function autoWriteCode(feature) {
-    console.log(`📝 Escribiendo código automáticamente para: ${feature}`);
-
-    const codeTemplates = {
-        'backup': `
-function createBackup() {
-    const data = {
-        bookedAppointments,
-        blockedDays,
-        adminSettings,
-        timestamp: new Date().toISOString()
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = \`backup-alex-barber-\${getLocalISODate()}.json\`;
-    a.click();
-    URL.revokeObjectURL(url);
-}
-        `,
-
-        'restore': `
-function restoreFromBackup(file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const data = JSON.parse(e.target.result);
-            bookedAppointments = data.bookedAppointments || {};
-            blockedDays = data.blockedDays || {};
-            adminSettings = data.adminSettings || {};
-            console.log('✅ Datos restaurados desde respaldo');
-        } catch (error) {
-            console.error('❌ Error al restaurar respaldo:', error);
-        }
-    };
-    reader.readAsText(file);
-}
-        `,
-
-        'analytics': `
-function generateAnalytics() {
-    const totalBookings = Object.values(bookedAppointments).reduce((t, d) => t + d.length, 0);
-    const totalBlockedDays = Object.keys(blockedDays).length;
-    const mostBusyDay = Object.entries(bookedAppointments).reduce((a, b) =>
-        a[1].length > b[1].length ? a : b, ['', []]
-    )[0];
-
-    return {
-        totalBookings,
-        totalBlockedDays,
-        mostBusyDay,
-        averageBookingsPerDay: totalBookings / Math.max(1, Object.keys(bookedAppointments).length)
-    };
-}
-        `
-    };
-
-    return codeTemplates[feature] || `// Código automático para ${feature} no disponible`;
-}
-
-function initializeDataSync() {
-    console.log('🔄 Inicializando sincronización automática de datos...');
-
-    // Sincronizar datos cada 30 segundos
-    setInterval(() => {
-        syncWithServer();
-    }, 30000);
-
-    // Detectar conexión a internet
-    window.addEventListener('online', () => {
-        console.log('🌐 Conexión restaurada, sincronizando...');
-        syncWithServer();
-    });
-
-    window.addEventListener('offline', () => {
-        console.log('📴 Sin conexión, trabajando en modo local');
-    });
-}
-
-async function syncWithServer() {
-    if (navigator.onLine) {
-        try {
-            // Simular sincronización con servidor
-            console.log('🔄 Sincronizando con servidor...');
-
-            // Aquí iría el código para sincronizar con un servidor real
-            // Por ahora, solo verificamos la conexión
-            const response = await fetch('https://httpbin.org/status/200', {
-                method: 'GET',
-                timeout: 5000
-            });
-
-            if (response.ok) {
-                console.log('✅ Sincronización exitosa');
-            }
-        } catch (error) {
-            console.log('⚠️ Servidor no disponible, continuando en modo local');
-        }
-    }
-}
-
-function createDataSnapshot() {
-    const snapshot = {
-        timestamp: new Date().toISOString(),
-        data: {
-            bookedAppointments: {...bookedAppointments},
-            blockedDays: {...blockedDays},
-            adminSettings: {...adminSettings}
-        },
-        metadata: {
-            userAgent: navigator.userAgent,
-            url: window.location.href,
-            screenSize: `${screen.width}x${screen.height}`,
-            localStorageSize: getLocalStorageSize()
-        }
-    };
-
-    const snapshotKey = `alexBarberSnapshot_${Date.now()}`;
-    localStorage.setItem(snapshotKey, JSON.stringify(snapshot));
-
-    console.log('📸 Snapshot creado:', snapshotKey);
-    return snapshot;
-}
-
-function getLocalStorageSize() {
-    let total = 0;
-    for (let key in localStorage) {
-        if (key.startsWith('alexBarber')) {
-            total += localStorage.getItem(key).length;
-        }
-    }
-    return total;
-}
-
-function autoGenerateReports() {
-    console.log('📊 Generando reportes automáticos...');
-
-    // Generar reporte diario
-    setInterval(() => {
-        if (Object.keys(bookedAppointments).length > 0) {
-            generateDailyReport();
-        }
-    }, 24 * 60 * 60 * 1000); // Diario
-
-    // Generar reporte semanal
-    setInterval(() => {
-        if (Object.keys(bookedAppointments).length > 0) {
-            generateWeeklyReport();
-        }
-    }, 7 * 24 * 60 * 60 * 1000); // Semanal
-}
-
-function generateDailyReport() {
-    const today = getLocalISODate();
-    const todaysBookings = bookedAppointments[today] || [];
-
-    if (todaysBookings.length > 0) {
-        const report = {
-            date: today,
-            bookings: todaysBookings.length,
-            details: todaysBookings,
-            generatedAt: new Date().toISOString()
-        };
-
-        const reportKey = `alexBarberDailyReport_${today}`;
-        localStorage.setItem(reportKey, JSON.stringify(report));
-
-        console.log(`📊 Reporte diario generado: ${todaysBookings.length} reservas`);
-    }
-}
-
-function generateWeeklyReport() {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-
-    let weeklyBookings = 0;
-    let weeklyDetails = {};
-
-    Object.keys(bookedAppointments).forEach(date => {
-        const dateObj = new Date(date + 'T00:00:00');
-        if (dateObj >= weekAgo) {
-            weeklyBookings += bookedAppointments[date].length;
-            weeklyDetails[date] = bookedAppointments[date];
-        }
-    });
-
-    if (weeklyBookings > 0) {
-        const report = {
-            weekStart: getLocalISODate(weekAgo),
-            weekEnd: getLocalISODate(),
-            totalBookings: weeklyBookings,
-            details: weeklyDetails,
-            generatedAt: new Date().toISOString()
-        };
-
-        const reportKey = `alexBarberWeeklyReport_${getLocalISODate()}`;
-        localStorage.setItem(reportKey, JSON.stringify(report));
-
-        console.log(`📊 Reporte semanal generado: ${weeklyBookings} reservas`);
-    }
-}
 
 // ============================================
 // FUNCIONES DE NAVEGACIÓN Y RESPONSIVE
@@ -2026,31 +1466,22 @@ function handleResponsive() {
     const carouselBtn = document.querySelectorAll('.carousel-btn');
 
     if (window.innerWidth <= 768) {
-        // Ocultar botones en móvil
         carouselBtn.forEach(btn => {
             btn.style.display = 'none';
         });
-        // Pausar auto-slide en móvil
         stopAutoSlide();
-
-        // Mejorar experiencia táctil en móvil
         enableTouchGestures();
     } else {
-        // Mostrar botones en desktop
         carouselBtn.forEach(btn => {
             btn.style.display = 'block';
         });
-        // Reiniciar auto-slide si no está activo
         if (!slideInterval) {
             startAutoSlide();
         }
-
-        // Deshabilitar gestos táctiles en desktop
         disableTouchGestures();
     }
 }
 
-// Función para habilitar gestos táctiles en móvil
 function enableTouchGestures() {
     const carousel = document.querySelector('.carousel-container');
     if (!carousel || carousel.hasTouchListener) return;
@@ -2074,627 +1505,36 @@ function enableTouchGestures() {
         const diffX = currentX - startX;
         const diffY = currentY - startY;
 
-        // Solo procesar si el movimiento horizontal es mayor que vertical
         if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
             if (diffX > 0) {
-                previousSlide(); // Swipe derecha = anterior
+                previousSlide();
             } else {
-                nextSlide(); // Swipe izquierda = siguiente
+                nextSlide();
             }
         }
     }, { passive: true });
 
     carousel.hasTouchListener = true;
-    console.log('✅ Gestos táctiles habilitados');
 }
 
-// Función para deshabilitar gestos táctiles
 function disableTouchGestures() {
     const carousel = document.querySelector('.carousel-container');
     if (!carousel || !carousel.hasTouchListener) return;
-
-    // Remover event listeners sería complejo, pero podemos marcar como deshabilitado
     carousel.hasTouchListener = false;
-    console.log('✅ Gestos táctiles deshabilitados');
 }
 
 // ============================================
 // LOG FINAL
 // ============================================
 
-console.log('🎉 Alexs Barber - Sistema completamente funcional');
-console.log('📋 Funcionalidades disponibles:');
-console.log('   • Carrusel automático con 8 imágenes');
-console.log('   • Galería interactiva con modal de imágenes');
-console.log('   • Sistema completo de reservas con formulario');
-console.log('   • Botón flotante de reservas sticky');
-console.log('   • Validación de formularios y confirmaciones');
-console.log('   • Impresión de detalles de reserva');
-console.log('   • Diseño 100% responsive');
-console.log('   • Navegación por teclado (←, →, Esc)');
-console.log('   • Soporte para gestos táctiles en móvil');
-console.log('   • Sistema de reservas ocupadas con localStorage');
-console.log('   • Visualización de horarios disponibles/ocupados');
-console.log('   • Prevención de doble reserva en misma hora');
-console.log('   • Persistencia de reservas entre sesiones');
-console.log('   • Panel de administración con contraseña');
-console.log('   • Gestión completa de reservas (ver, eliminar)');
-console.log('   • Exportación de reservas a archivo');
-console.log('   • Configuración del sistema');
-console.log('   • Botón flotante de Admin');
-console.log('   • 🚫 Sistema de días bloqueados');
-console.log('   • Gestión de días no disponibles');
-console.log('   • Prevención de reservas en días bloqueados');
-console.log('   • Exportación de días bloqueados');
-console.log('   • 🔄 Sistema de autoguardado automático (2 segundos)');
-console.log('   • 📦 Respaldos automáticos diarios');
-console.log('   • 📊 Reportes automáticos (diarios y semanales)');
-console.log('   • 🤖 Generación automática de código');
-console.log('   • 💾 Sincronización automática de datos');
-console.log('   • 📸 Snapshots automáticos del sistema');
-console.log('   • 🚨 Función de recuperación de emergencia');
-console.log('🎯 Todo listo en http://localhost:8000');
+console.log('🎉 Alexs Barber - Sistema con Firebase Firestore completamente funcional');
+console.log('📋 Funcionalidades:');
+console.log('   • Firebase Firestore para almacenamiento en la nube');
+console.log('   • Sincronización en tiempo real entre dispositivos');
+console.log('   • Reservas compartidas globalmente');
+console.log('   • Sistema de días bloqueados');
+console.log('   • Panel de administración completo');
+console.log('   • Fallback automático a localStorage si Firebase falla');
+console.log('🔥 Firebase conectado y listo');
+console.log('🎯 Sistema listo en http://localhost:8000');
 
-// ============================================
-// FUNCIONES ADICIONALES DE AUTOGUARDADO
-// ============================================
-
-// Función para verificar integridad de datos
-function verifyDataIntegrity() {
-    console.log('🔍 Verificando integridad de datos...');
-
-    try {
-        // Verificar reservas
-        if (typeof bookedAppointments !== 'object') {
-            console.warn('⚠️ Datos de reservas corruptos, restaurando...');
-            bookedAppointments = {};
-        }
-
-        // Verificar días bloqueados
-        if (typeof blockedDays !== 'object') {
-            console.warn('⚠️ Datos de días bloqueados corruptos, restaurando...');
-            blockedDays = {};
-        }
-
-        // Verificar configuración
-        if (typeof adminSettings !== 'object') {
-            console.warn('⚠️ Configuración corrupta, restaurando valores por defecto...');
-            adminSettings = {
-                openingTime: '09:00',
-                closingTime: '19:00',
-                whatsappNumber: '56926257862'
-            };
-        }
-
-        console.log('✅ Verificación de integridad completada');
-        return true;
-
-    } catch (error) {
-        console.error('❌ Error en verificación de integridad:', error);
-        return false;
-    }
-}
-
-// Función para optimizar almacenamiento
-function optimizeStorage() {
-    console.log('🧹 Optimizando almacenamiento...');
-
-    try {
-        // Eliminar datos antiguos innecesarios
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-        // Limpiar snapshots antiguos
-        const snapshotKeys = Object.keys(localStorage).filter(key =>
-            key.startsWith('alexBarberSnapshot_')
-        );
-
-        snapshotKeys.forEach(key => {
-            const timestamp = parseInt(key.split('_')[2]);
-            if (timestamp < thirtyDaysAgo.getTime()) {
-                localStorage.removeItem(key);
-            }
-        });
-
-        // Limpiar reportes antiguos
-        const reportKeys = Object.keys(localStorage).filter(key =>
-            key.includes('Report_')
-        );
-
-        reportKeys.forEach(key => {
-            const dateStr = key.split('_').pop().split('.')[0];
-            const reportDate = new Date(dateStr + 'T00:00:00');
-            if (reportDate < thirtyDaysAgo) {
-                localStorage.removeItem(key);
-            }
-        });
-
-        console.log('✅ Optimización de almacenamiento completada');
-
-    } catch (error) {
-        console.error('❌ Error en optimización de almacenamiento:', error);
-    }
-}
-
-// Función para mostrar estadísticas del sistema
-function showSystemStats() {
-    const stats = {
-        totalBookings: Object.values(bookedAppointments).reduce((t, d) => t + d.length, 0),
-        totalBlockedDays: Object.keys(blockedDays).length,
-        localStorageSize: getLocalStorageSize(),
-        lastSave: new Date(lastSaveTimestamp).toLocaleString('es-CL'),
-        autoSaveInterval: `${AUTOSAVE_DELAY/1000}s`,
-        pendingChanges: pendingChanges ? 'Sí' : 'No'
-    };
-
-    console.log('📊 Estadísticas del sistema:');
-    console.table(stats);
-
-    return stats;
-}
-
-// Función para recuperación automática en caso de error crítico
-function initializeErrorRecovery() {
-    window.addEventListener('error', function(event) {
-        console.error('🚨 Error crítico detectado:', event.error);
-
-        // Crear snapshot de emergencia
-        createDataSnapshot();
-
-        // Intentar recuperación automática
-        if (verifyDataIntegrity()) {
-            console.log('🔧 Recuperación automática exitosa');
-        } else {
-            console.log('⚠️ Recuperación automática fallida, usando respaldo de emergencia');
-            if (typeof window.emergencyDataRecovery === 'function') {
-                window.emergencyDataRecovery();
-            }
-        }
-    });
-
-    console.log('🛡️ Sistema de recuperación de errores inicializado');
-}
-
-// Función para inicializar todas las funciones automáticas
-function initializeAllAutomaticFeatures() {
-    console.log('🚀 Inicializando todas las características automáticas...');
-
-    // Inicializar verificación de integridad
-    verifyDataIntegrity();
-
-    // Inicializar optimización de almacenamiento
-    optimizeStorage();
-
-    // Inicializar recuperación de errores
-    initializeErrorRecovery();
-
-    // Mostrar estadísticas iniciales
-    showSystemStats();
-
-    console.log('✅ Todas las características automáticas inicializadas');
-}
-
-// Ejecutar inicialización completa al cargar
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-        initializeAllAutomaticFeatures();
-    }, 1000);
-});
-
-// Función para generar código automáticamente basado en necesidades
-function autoGenerateFeature(featureName) {
-    console.log(`🔧 Generando automáticamente la función: ${featureName}`);
-
-    const features = {
-        'notification': `
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = \`notification \${type}\`;
-    notification.innerHTML = \`
-        <i class="fas fa-\${type === 'success' ? 'check' : type === 'error' ? 'exclamation' : 'info'}-circle"></i>
-        <span>\${message}</span>
-    \`;
-
-    notification.style.cssText = \`
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: \${type === 'success' ? 'linear-gradient(135deg, #D4AF37, #FFD700)' :
-                     type === 'error' ? 'linear-gradient(135deg, #dc3545, #e74c3c)' :
-                     'linear-gradient(135deg, #17a2b8, #5bc0de)'};
-        color: white;
-        padding: 12px 20px;
-        border-radius: 25px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-size: 0.9rem;
-        font-weight: 600;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-        z-index: 10000;
-        animation: slideInRight 0.3s ease;
-    \`;
-
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-        notification.style.animation = 'slideOutRight 0.3s ease';
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, 300);
-    }, 4000);
-}
-        `,
-
-        'theme': `
-function toggleTheme() {
-    const currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
-    const newTheme = currentTheme === 'light' ? 'dark' : 'light';
-
-    document.documentElement.setAttribute('data-theme', newTheme);
-    localStorage.setItem('alexBarberTheme', newTheme);
-
-    console.log('🎨 Tema cambiado a:', newTheme);
-}
-        `,
-
-        'shortcuts': `
-function initializeKeyboardShortcuts() {
-    document.addEventListener('keydown', function(event) {
-        // Ctrl/Cmd + S: Guardar manualmente
-        if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-            event.preventDefault();
-            performAutoSave();
-            showNotification('Datos guardados manualmente', 'success');
-        }
-
-        // Ctrl/Cmd + B: Crear respaldo
-        if ((event.ctrlKey || event.metaKey) && event.key === 'b') {
-            event.preventDefault();
-            createAutomaticBackup();
-            showNotification('Respaldo creado', 'success');
-        }
-
-        // Ctrl/Cmd + R: Mostrar estadísticas
-        if ((event.ctrlKey || event.metaKey) && event.key === 'r') {
-            event.preventDefault();
-            console.log('📊 Estadísticas actuales:');
-            showSystemStats();
-        }
-    });
-
-    console.log('⌨️ Atajos de teclado inicializados');
-}
-        `
-    };
-
-    return features[featureName] || `// Función ${featureName} no disponible para generación automática`;
-}
-
-// Función para ejecutar comandos automáticos
-function executeAutoCommand(command) {
-    console.log(`⚡ Ejecutando comando automático: ${command}`);
-
-    switch(command) {
-        case 'backup':
-            createAutomaticBackup();
-            break;
-        case 'optimize':
-            optimizeStorage();
-            break;
-        case 'stats':
-            showSystemStats();
-            break;
-        case 'verify':
-            verifyDataIntegrity();
-            break;
-        case 'snapshot':
-            createDataSnapshot();
-            break;
-        case 'generate-theme':
-            const themeCode = autoGenerateFeature('theme');
-            console.log('🎨 Código de tema generado:', themeCode);
-            break;
-        case 'generate-notifications':
-            const notificationCode = autoGenerateFeature('notification');
-            console.log('🔔 Código de notificaciones generado:', notificationCode);
-            break;
-        case 'generate-shortcuts':
-            const shortcutsCode = autoGenerateFeature('shortcuts');
-            console.log('⌨️ Código de atajos generado:', shortcutsCode);
-            break;
-        default:
-            console.log(`❓ Comando desconocido: ${command}`);
-    }
-}
-
-// Función para monitoreo automático del rendimiento
-function initializePerformanceMonitoring() {
-    console.log('📈 Inicializando monitoreo de rendimiento...');
-
-    // Monitorear uso de memoria
-    if (performance.memory) {
-        setInterval(() => {
-            const memoryUsage = performance.memory.usedJSHeapSize / 1024 / 1024;
-            if (memoryUsage > 50) { // Más de 50MB
-                console.warn('⚠️ Alto uso de memoria:', Math.round(memoryUsage), 'MB');
-                optimizeStorage();
-            }
-        }, 60000); // Cada minuto
-    }
-
-    // Monitorear tiempo de carga
-    window.addEventListener('load', () => {
-        setTimeout(() => {
-            const loadTime = performance.now();
-            console.log('⏱️ Tiempo de carga completo:', Math.round(loadTime), 'ms');
-
-            if (loadTime > 3000) {
-                console.warn('⚠️ Tiempo de carga elevado, considere optimizaciones');
-            }
-        }, 0);
-    });
-
-    console.log('✅ Monitoreo de rendimiento inicializado');
-}
-
-// Inicializar monitoreo de rendimiento
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-        initializePerformanceMonitoring();
-    }, 2000);
-});
-
-// Función para auto-reparar problemas comunes
-function autoRepair() {
-    console.log('🔧 Ejecutando auto-reparación...');
-
-    let repairs = 0;
-
-    // Reparar datos corruptos
-    if (!verifyDataIntegrity()) {
-        console.log('🔧 Datos corruptos reparados');
-        repairs++;
-    }
-
-    // Reparar localStorage lleno
-    try {
-        const testKey = 'alexBarberTest_' + Date.now();
-        localStorage.setItem(testKey, 'test');
-        localStorage.removeItem(testKey);
-    } catch (e) {
-        console.log('🗑️ localStorage lleno, limpiando datos antiguos...');
-        optimizeStorage();
-        repairs++;
-    }
-
-    // Reparar funciones faltantes
-    if (typeof window.emergencyDataRecovery === 'undefined') {
-        generateCodeAutomatically();
-        repairs++;
-    }
-
-    console.log(`✅ Auto-reparación completada. Reparaciones realizadas: ${repairs}`);
-    return repairs;
-}
-
-// Función para mantenimiento automático completo
-function performMaintenance() {
-    console.log('🧹 Ejecutando mantenimiento automático completo...');
-
-    const maintenanceTasks = [
-        { name: 'Verificación de integridad', function: verifyDataIntegrity },
-        { name: 'Optimización de almacenamiento', function: optimizeStorage },
-        { name: 'Creación de respaldo', function: createAutomaticBackup },
-        { name: 'Generación de reporte', function: generateDailyReport },
-        { name: 'Auto-reparación', function: autoRepair }
-    ];
-
-    let completedTasks = 0;
-
-    maintenanceTasks.forEach(task => {
-        try {
-            task.function();
-            console.log(`✅ ${task.name} completada`);
-            completedTasks++;
-        } catch (error) {
-            console.error(`❌ Error en ${task.name}:`, error);
-        }
-    });
-
-    console.log(`🧹 Mantenimiento completado: ${completedTasks}/${maintenanceTasks.length} tareas exitosas`);
-    return completedTasks;
-}
-
-// Programar mantenimiento automático semanal
-setInterval(() => {
-    const dayOfWeek = new Date().getDay(); // 0 = Domingo
-    if (dayOfWeek === 0) { // Ejecutar los domingos
-        performMaintenance();
-    }
-}, 24 * 60 * 60 * 1000);
-
-// Función para auto-generar documentación
-function generateDocumentation() {
-    console.log('📚 Generando documentación automática...');
-
-    const doc = {
-        title: 'Alexs Barber - Documentación Automática',
-        version: '2.0',
-        generatedAt: new Date().toLocaleString('es-CL'),
-        features: {
-            'Sistema de Reservas': {
-                description: 'Sistema completo de reservas con validación y persistencia',
-                functions: ['bookTimeSlot', 'isTimeSlotAvailable', 'updateTimeSlotsAvailability']
-            },
-            'Días Bloqueados': {
-                description: 'Sistema para bloquear días no disponibles',
-                functions: ['blockDay', 'unblockDay', 'isDayBlocked']
-            },
-            'Autoguardado': {
-                description: 'Sistema automático de guardado cada 2 segundos',
-                functions: ['initializeAutoSave', 'performAutoSave', 'monitorDataChanges']
-            },
-            'Respaldos': {
-                description: 'Sistema automático de respaldos diarios',
-                functions: ['createAutomaticBackup', 'scheduleAutoBackup', 'cleanupOldBackups']
-            },
-            'Reportes': {
-                description: 'Generación automática de reportes diarios y semanales',
-                functions: ['generateDailyReport', 'generateWeeklyReport', 'autoGenerateReports']
-            }
-        },
-        shortcuts: {
-            'keyboard': {
-                '←/→': 'Navegar carrusel',
-                'Escape': 'Cerrar modales',
-                'Ctrl+S': 'Guardar manualmente',
-                'Ctrl+B': 'Crear respaldo',
-                'Ctrl+R': 'Mostrar estadísticas'
-            }
-        },
-        stats: showSystemStats()
-    };
-
-    // Crear y descargar documentación
-    const docContent = JSON.stringify(doc, null, 2);
-    const blob = new Blob([docContent], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `documentacion-alex-barber-${getLocalISODate()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-
-    console.log('📚 Documentación generada automáticamente');
-    return doc;
-}
-
-// Función para inicializar comandos automáticos disponibles
-function initializeAutoCommands() {
-    console.log('⚡ Inicializando comandos automáticos...');
-
-    // Hacer funciones disponibles globalmente
-    window.autoSave = performAutoSave;
-    window.createBackup = createAutomaticBackup;
-    window.showStats = showSystemStats;
-    window.autoRepair = autoRepair;
-    window.generateDoc = generateDocumentation;
-    window.executeCommand = executeAutoCommand;
-    window.generateFeature = autoGenerateFeature;
-
-    console.log('✅ Comandos automáticos disponibles:');
-    console.log('   • autoSave() - Guardar inmediatamente');
-    console.log('   • createBackup() - Crear respaldo');
-    console.log('   • showStats() - Mostrar estadísticas');
-    console.log('   • autoRepair() - Reparar problemas');
-    console.log('   • generateDoc() - Generar documentación');
-    console.log('   • executeCommand("backup") - Ejecutar comando');
-    console.log('   • generateFeature("theme") - Generar función');
-}
-
-// Inicializar comandos automáticos
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-        initializeAutoCommands();
-    }, 1500);
-});
-
-// ============================================
-// FIREBASE UTILITY FUNCTIONS (ADD TO END OF FILE)
-// ============================================
-
-// Función para configurar Firebase fácilmente
-function configureFirebase(config) {
-    try {
-        console.log('🔧 Configurando Firebase con nuevos parámetros...');
-
-        // Actualizar configuración
-        Object.assign(firebaseConfig, config);
-
-        // Re-inicializar Firebase con nueva configuración
-        if (app) {
-            console.log('🔄 Re-inicializando Firebase...');
-        }
-
-        console.log('✅ Firebase configurado exitosamente');
-        return true;
-
-    } catch (error) {
-        console.error('❌ Error configurando Firebase:', error);
-        return false;
-    }
-}
-
-// Función para verificar conexión a Firebase
-async function testFirebaseConnection() {
-    try {
-        console.log('🔍 Verificando conexión a Firebase...');
-
-        // Intentar hacer una consulta simple
-        const testQuery = await db.collection('reservas').limit(1).get();
-
-        console.log('✅ Conexión a Firebase exitosa');
-        return true;
-
-    } catch (error) {
-        console.error('❌ Error de conexión a Firebase:', error);
-        return false;
-    }
-}
-
-// Función para limpiar reservas antiguas de Firebase
-async function cleanupOldBookingsFirebase() {
-    try {
-        const today = getLocalISODate(new Date());
-        const snapshot = await db.collection('reservas').get();
-
-        const deletePromises = [];
-        snapshot.forEach(doc => {
-            if (doc.id < today) {
-                deletePromises.push(doc.ref.delete());
-            }
-        });
-
-        if (deletePromises.length > 0) {
-            await Promise.all(deletePromises);
-            console.log(`🧹 ${deletePromises.length} reservas antiguas eliminadas de Firebase`);
-        }
-
-        return deletePromises.length;
-
-    } catch (error) {
-        console.error('❌ Error limpiando reservas antiguas:', error);
-        return 0;
-    }
-}
-
-// Make Firebase functions available globally for easy configuration
-window.configureFirebase = configureFirebase;
-window.testFirebaseConnection = testFirebaseConnection;
-window.cleanupOldBookingsFirebase = cleanupOldBookingsFirebase;
-
-// Instructions for user
-console.log('🔥 Firebase configurado para Alex Barber');
-console.log('📝 Para configurar Firebase, usa:');
-console.log('   configureFirebase({');
-console.log('     apiKey: "tu-api-key",');
-console.log('     projectId: "tu-project-id",');
-console.log('     authDomain: "tu-project.firebaseapp.com",');
-console.log('     storageBucket: "tu-project.appspot.com",');
-console.log('     messagingSenderId: "tu-sender-id",');
-console.log('     appId: "tu-app-id"');
-console.log('   });');
-console.log('');
-console.log('🧪 Para probar conexión: testFirebaseConnection()');
-console.log('🧹 Para limpiar reservas antiguas: cleanupOldBookingsFirebase()');
-
-console.log('🎯 Alexs Barber - Sistema avanzado con autoguardado automático');
-console.log('🔧 Funciones automáticas disponibles globalmente');
-console.log('📋 Escribe los comandos en la consola para usarlos');
-
-// ============================================
-// END OF FILE - ALEXS BARBER SYSTEM
-// ============================================
