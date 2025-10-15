@@ -594,8 +594,9 @@ function resetBookingForm() {
     console.log('🔄 Formulario de reservas reseteado');
 }
 
+
 // ============================================
-// FUNCIONES DEL SISTEMA DE RESERVAS OCUPADAS
+// FUNCIONES DEL SISTEMA DE RESERVAS OCUPADAS (CORREGIDAS)
 // ============================================
 
 function loadBookedAppointments() {
@@ -608,6 +609,21 @@ function loadBookedAppointments() {
             bookedAppointments = {};
             console.log('📅 No hay reservas guardadas, iniciando con lista vacía');
         }
+
+        // 🧹 LIMPIAR RESERVAS ANTIGUAS AUTOMÁTICAMENTE
+        const today = getLocalISODate(new Date());
+        let removed = 0;
+        for (let date in bookedAppointments) {
+            if (date < today) {
+                delete bookedAppointments[date];
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            saveBookedAppointments();
+            console.log(`🧹 ${removed} reservas antiguas eliminadas automáticamente`);
+        }
+
     } catch (error) {
         console.error('❌ Error al cargar reservas:', error);
         bookedAppointments = {};
@@ -624,18 +640,15 @@ function saveBookedAppointments() {
 }
 
 function isTimeSlotAvailable(date, time) {
-    const dateKey = getLocalISODate(new Date(date));
+    const dateKey = date; // usar formato directo del input
     const dayAppointments = bookedAppointments[dateKey];
 
-    if (!dayAppointments) {
-        return true; // Si no hay reservas para esa fecha, está disponible
-    }
-
-    return !dayAppointments.includes(time); // Verificar si la hora específica está ocupada
+    if (!dayAppointments) return true;
+    return !dayAppointments.includes(time);
 }
 
 function bookTimeSlot(date, time) {
-    const dateKey = getLocalISODate(new Date(date));
+    const dateKey = date;
 
     if (!bookedAppointments[dateKey]) {
         bookedAppointments[dateKey] = [];
@@ -648,46 +661,19 @@ function bookTimeSlot(date, time) {
         return true;
     }
 
-    return false; // Ya estaba ocupada
+    return false;
 }
 
 function updateTimeSlotsAvailability() {
     const dateInput = document.getElementById('appointmentDate');
     const timeSelect = document.getElementById('appointmentTime');
 
-    if (!dateInput || !timeSelect) {
-        console.error('❌ Elementos de fecha y hora no encontrados');
-        return;
-    }
+    if (!dateInput || !timeSelect) return;
 
     const selectedDate = dateInput.value;
-    if (!selectedDate) {
-        return; // No hay fecha seleccionada
-    }
+    if (!selectedDate) return;
 
-    // Verificar si el día está bloqueado
-    if (isDayBlocked(selectedDate)) {
-        // Limpiar opciones actuales (excepto la primera que es "Seleccionar hora")
-        while (timeSelect.children.length > 1) {
-            timeSelect.removeChild(timeSelect.lastChild);
-        }
-
-        // Agregar opción indicando que el día está bloqueado
-        const blockedOption = document.createElement('option');
-        blockedOption.value = '';
-        blockedOption.textContent = '❌ Día no disponible';
-        blockedOption.disabled = true;
-        blockedOption.selected = true;
-        timeSelect.appendChild(blockedOption);
-
-        console.log(`🚫 Día bloqueado seleccionado: ${selectedDate}`);
-        return;
-    }
-
-    // Guardar la hora seleccionada actualmente
-    const currentlySelectedTime = timeSelect.value;
-
-    // Limpiar opciones actuales (excepto la primera que es "Seleccionar hora")
+    // Limpiar las opciones anteriores
     while (timeSelect.children.length > 1) {
         timeSelect.removeChild(timeSelect.lastChild);
     }
@@ -698,7 +684,6 @@ function updateTimeSlotsAvailability() {
         '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
     ];
 
-    // Agregar horarios con su estado de disponibilidad
     availableTimes.forEach(time => {
         const option = document.createElement('option');
         option.value = time;
@@ -715,13 +700,9 @@ function updateTimeSlotsAvailability() {
         timeSelect.appendChild(option);
     });
 
-    // Restaurar la selección anterior si aún está disponible
-    if (currentlySelectedTime && isTimeSlotAvailable(selectedDate, currentlySelectedTime)) {
-        timeSelect.value = currentlySelectedTime;
-    }
-
     console.log(`📅 Horarios actualizados para ${selectedDate}`);
 }
+
 
 // ============================================
 // FUNCIONES DEL SISTEMA DE DÍAS BLOQUEADOS
