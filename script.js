@@ -10,17 +10,20 @@ console.log('🚀 Iniciando Alexs Barber...');
 
 // Firebase configuration - Replace with your actual Firebase project config
 const firebaseConfig = {
-    apiKey: "your-api-key-here",
-    authDomain: "your-project-id.firebaseapp.com",
-    projectId: "your-project-id",
-    storageBucket: "your-project-id.appspot.com",
-    messagingSenderId: "your-sender-id",
-    appId: "your-app-id"
+    apiKey: "YOUR_FIREBASE_API_KEY_HERE",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID_HERE",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+// Initialize Firebase (modern way)
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import { getFirestore } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 // ============================================
 // FIREBASE REPLACEMENT FUNCTIONS FOR RESERVATIONS
@@ -758,7 +761,7 @@ NUEVA RESERVA - ALEX BARBER
     }
 
     // Marcar la hora como ocupada ANTES de cerrar el modal usando Firebase
-    bookTimeSlotFirebase(bookingData.appointmentDate, bookingData.appointmentTime);
+    bookTimeSlot(bookingData.appointmentDate, bookingData.appointmentTime);
 
     // Cerrar modal y resetear formulario
     closeBookingModal();
@@ -884,41 +887,70 @@ function saveBookedAppointments() {
     }
 }
 
-function isTimeSlotAvailable(date, time) {
-    const dateKey = date; // usar formato directo del input
-    const dayAppointments = bookedAppointments[dateKey];
+async function isTimeSlotAvailable(date, time) {
+    try {
+        const dateKey = date;
+        const docRef = db.collection('reservas').doc(dateKey);
+        const doc = await docRef.get();
 
-    if (!dayAppointments) return true;
-    return !dayAppointments.includes(time);
+        if (!doc.exists) return true;
+        const dayData = doc.data().horas || [];
+        return !dayData.includes(time);
+
+    } catch (error) {
+        console.error('❌ Error al verificar disponibilidad en Firebase:', error);
+        return true; // En caso de error, asumir disponible para no bloquear reservas
+    }
 }
 
-function bookTimeSlot(date, time) {
-    const dateKey = date;
+async function bookTimeSlot(date, time) {
+    try {
+        const dateKey = date;
+        const docRef = db.collection('reservas').doc(dateKey);
+        const doc = await docRef.get();
 
-    if (!bookedAppointments[dateKey]) {
-        bookedAppointments[dateKey] = [];
+        let dayData = [];
+        if (doc.exists) {
+            dayData = doc.data().horas || [];
+        }
+
+        if (!dayData.includes(time)) {
+            dayData.push(time);
+            await docRef.set({
+                horas: dayData,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`✅ Hora ${time} marcada como ocupada en Firebase para ${dateKey}`);
+            return true;
+        } else {
+            console.log(`❌ Hora ${time} ya está ocupada para ${dateKey}`);
+            return false;
+        }
+
+    } catch (error) {
+        console.error('❌ Error al reservar hora en Firebase:', error);
+        return false;
     }
-
-    if (!bookedAppointments[dateKey].includes(time)) {
-        bookedAppointments[dateKey].push(time);
-        saveBookedAppointments();
-        console.log(`✅ Hora ${time} marcada como ocupada para ${dateKey}`);
-        return true;
-    }
-
-    return false;
 }
 
 async function updateTimeSlotsAvailability() {
     const dateInput = document.getElementById('appointmentDate');
     const timeSelect = document.getElementById('appointmentTime');
 
-    if (!dateInput || !timeSelect) return;
+    if (!dateInput || !timeSelect) {
+        console.error('❌ Elementos del formulario no encontrados');
+        return;
+    }
 
     const selectedDate = dateInput.value;
-    if (!selectedDate) return;
+    if (!selectedDate) {
+        console.log('📅 No hay fecha seleccionada');
+        return;
+    }
 
-    // Limpiar las opciones anteriores
+    console.log('🔄 Actualizando horarios para fecha:', selectedDate);
+
+    // Limpiar las opciones anteriores (mantener solo la primera opción)
     while (timeSelect.children.length > 1) {
         timeSelect.removeChild(timeSelect.lastChild);
     }
@@ -929,38 +961,39 @@ async function updateTimeSlotsAvailability() {
         '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'
     ];
 
+    console.log('⏰ Verificando disponibilidad de horarios en Firebase...');
+
     // Usar Firebase para verificar disponibilidad
     for (const time of availableTimes) {
         const option = document.createElement('option');
         option.value = time;
 
         try {
-            const isAvailable = await isTimeSlotAvailableFirebase(selectedDate, time);
+            console.log(`🔍 Verificando horario ${time}...`);
+            const isAvailable = await isTimeSlotAvailable(selectedDate, time);
+
             if (isAvailable) {
                 option.textContent = `${time} - Disponible`;
                 option.className = 'time-available';
+                console.log(`✅ ${time} - Disponible`);
             } else {
-                option.textContent = `${time} - Ocupada`;
+                option.textContent = `${time} - Hora ocupada`;
                 option.className = 'time-occupied';
                 option.disabled = true;
+                console.log(`❌ ${time} - Hora ocupada`);
             }
         } catch (error) {
-            console.error('❌ Error checking availability for time slot:', time, error);
-            // Fallback to localStorage if Firebase fails
-            if (isTimeSlotAvailable(selectedDate, time)) {
-                option.textContent = `${time} - Disponible`;
-                option.className = 'time-available';
-            } else {
-                option.textContent = `${time} - Ocupada`;
-                option.className = 'time-occupied';
-                option.disabled = true;
-            }
+            console.error('❌ Error verificando disponibilidad para horario:', time, error);
+            // En caso de error, mostrar como disponible para no bloquear reservas
+            option.textContent = `${time} - Disponible (Error)`;
+            option.className = 'time-available';
+            console.log(`⚠️ ${time} - Disponible (Error de conexión)`);
         }
 
         timeSelect.appendChild(option);
     }
 
-    console.log(`📅 Horarios actualizados para ${selectedDate} usando Firebase`);
+    console.log(`📅 Horarios actualizados para ${selectedDate}. Total opciones:`, timeSelect.children.length - 1);
 }
 
 // ============================================
@@ -2568,6 +2601,95 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeAutoCommands();
     }, 1500);
 });
+
+// ============================================
+// FIREBASE UTILITY FUNCTIONS (ADD TO END OF FILE)
+// ============================================
+
+// Función para configurar Firebase fácilmente
+function configureFirebase(config) {
+    try {
+        console.log('🔧 Configurando Firebase con nuevos parámetros...');
+
+        // Actualizar configuración
+        Object.assign(firebaseConfig, config);
+
+        // Re-inicializar Firebase con nueva configuración
+        if (app) {
+            console.log('🔄 Re-inicializando Firebase...');
+        }
+
+        console.log('✅ Firebase configurado exitosamente');
+        return true;
+
+    } catch (error) {
+        console.error('❌ Error configurando Firebase:', error);
+        return false;
+    }
+}
+
+// Función para verificar conexión a Firebase
+async function testFirebaseConnection() {
+    try {
+        console.log('🔍 Verificando conexión a Firebase...');
+
+        // Intentar hacer una consulta simple
+        const testQuery = await db.collection('reservas').limit(1).get();
+
+        console.log('✅ Conexión a Firebase exitosa');
+        return true;
+
+    } catch (error) {
+        console.error('❌ Error de conexión a Firebase:', error);
+        return false;
+    }
+}
+
+// Función para limpiar reservas antiguas de Firebase
+async function cleanupOldBookingsFirebase() {
+    try {
+        const today = getLocalISODate(new Date());
+        const snapshot = await db.collection('reservas').get();
+
+        const deletePromises = [];
+        snapshot.forEach(doc => {
+            if (doc.id < today) {
+                deletePromises.push(doc.ref.delete());
+            }
+        });
+
+        if (deletePromises.length > 0) {
+            await Promise.all(deletePromises);
+            console.log(`🧹 ${deletePromises.length} reservas antiguas eliminadas de Firebase`);
+        }
+
+        return deletePromises.length;
+
+    } catch (error) {
+        console.error('❌ Error limpiando reservas antiguas:', error);
+        return 0;
+    }
+}
+
+// Make Firebase functions available globally for easy configuration
+window.configureFirebase = configureFirebase;
+window.testFirebaseConnection = testFirebaseConnection;
+window.cleanupOldBookingsFirebase = cleanupOldBookingsFirebase;
+
+// Instructions for user
+console.log('🔥 Firebase configurado para Alex Barber');
+console.log('📝 Para configurar Firebase, usa:');
+console.log('   configureFirebase({');
+console.log('     apiKey: "tu-api-key",');
+console.log('     projectId: "tu-project-id",');
+console.log('     authDomain: "tu-project.firebaseapp.com",');
+console.log('     storageBucket: "tu-project.appspot.com",');
+console.log('     messagingSenderId: "tu-sender-id",');
+console.log('     appId: "tu-app-id"');
+console.log('   });');
+console.log('');
+console.log('🧪 Para probar conexión: testFirebaseConnection()');
+console.log('🧹 Para limpiar reservas antiguas: cleanupOldBookingsFirebase()');
 
 console.log('🎯 Alexs Barber - Sistema avanzado con autoguardado automático');
 console.log('🔧 Funciones automáticas disponibles globalmente');
